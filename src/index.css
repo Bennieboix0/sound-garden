@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink-100 text-ink-900 antialiased;
+    /* Never let a page turn be interrupted by rubber-band scrolling. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .dark body {
+    @apply bg-ink-900 text-ink-100;
+  }
+
+  /* Stage lighting is unforgiving: the focus ring has to be obvious. */
+  :focus-visible {
+    @apply outline-none ring-4 ring-moss-400 ring-offset-2 ring-offset-ink-100;
+  }
+
+  .dark :focus-visible {
+    @apply ring-offset-ink-900;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply bg-white text-ink-900 border-2 border-ink-300 rounded-lg;
+  }
+
+  .dark input,
+  .dark textarea,
+  .dark select {
+    @apply bg-ink-850 text-ink-100 border-ink-600;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    /* Placeholders still need to clear 4.5:1 — no thin grey hints. */
+    @apply text-ink-500;
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    @apply text-ink-400;
+  }
+}
+
+@layer utilities {
+  /* Respects the notch when the phone drives an external display. */
+  .pad-safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .pad-safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  /* Inverting the rendered canvas turns a white page black without touching
+     the PDF itself. Sheet music is line art, so a straight inversion is exactly
+     right — no hue rotation needed. */
+  .score-inverted {
+    filter: invert(1);
+  }
+
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

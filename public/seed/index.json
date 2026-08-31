@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "_note": "Public-domain scores from the Mutopia Project, typeset with LilyPond and placed in the public domain by their typesetters. See public/seed/CREDITS.md.",
+  "scores": [
+    {
+      "file": "bach-prelude-c-bwv846.pdf",
+      "title": "Prelude No. 1 in C major, BWV 846",
+      "artist": "J. S. Bach",
+      "key": "C major",
+      "tempo": "♩ = 66",
+      "tags": ["classical", "keyboard", "warm-up"]
+    },
+    {
+      "file": "satie-gymnopedie-1.pdf",
+      "title": "Gymnopédie No. 1",
+      "artist": "Erik Satie",
+      "key": "D major",
+      "tempo": "Lent et douloureux",
+      "tags": ["classical", "ambient", "solo"]
+    },
+    {
+      "file": "joplin-the-entertainer.pdf",
+      "title": "The Entertainer",
+      "artist": "Scott Joplin",
+      "key": "C major",
+      "tempo": "Not fast",
+      "tags": ["ragtime", "standards"]
+    }
+  ]
+}
