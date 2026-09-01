@@ -6,6 +6,7 @@ import type { FitMode } from '../../types';
 import { SegmentedControl, Toggle } from '../ui/controls';
 import BackupPanel from './BackupPanel';
 import PedalSettings from './PedalSettings';
+import SyncPanel from './SyncPanel';
 
 function DisplaySettings() {
   const { settings, update } = useSettings();
@@ -130,6 +131,7 @@ export default function SettingsView() {
       <PedalSettings />
       <DisplaySettings />
       <BackupPanel />
+      <SyncPanel />
       <StorageSummary />
     </div>
   );

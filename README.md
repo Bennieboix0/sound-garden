@@ -445,6 +445,101 @@ auto-incremented `seq` is the monotonic local sequence number.
 is queued, and the app is exactly what it was before: local, accountless, and
 complete. See [`src/sync/flags.ts`](src/sync/flags.ts).
 
+## Sync (Phase 1: personal devices)
+
+Optional, off until you sign in, and additive: a user who never creates an
+account loses nothing, and the first-run experience never mentions accounts at
+all. Configuration lives in [`.env.example`](.env.example); with no credentials
+set the Supabase client is not even included in the bundle.
+
+### What the server may hold — and what it may never hold
+
+The server stores **annotation strokes, setlist structure, per-score display
+preferences, and content hashes**. That is the complete list.
+
+It must **never** hold PDF bytes, filenames, page images, thumbnails, or text
+extracted from a score. Scores are usually material the holder is licensed to
+read but not to redistribute, and uploading one is redistribution whatever the
+intent. This is a legal constraint, not a preference, so it is enforced
+structurally rather than by care:
+
+- No table in
+  [`supabase/migrations/`](supabase/migrations/0001_personal_sync.sql) has a
+  column that could carry a file — no `bytea`, no storage bucket, no blob.
+- The wire types in [`src/sync/transport.ts`](src/sync/transport.ts) are the
+  entire vocabulary of what can cross the network.
+- A test asserts that no column and no wire field is file-shaped, so adding one
+  fails the suite rather than shipping.
+
+**A score is identified only by the SHA-256 of its bytes.** That hash is
+one-way, is useless without the file, and is what lets markings drawn on a
+phone land in the right place on a laptop that happens to hold the same
+document.
+
+### Conflict resolution
+
+Last-write-wins on `updatedAt`, **per stroke id**. No merge algorithm, because
+none is needed: strokes are small, immutable once drawn, and independent. Two
+musicians marking the same bar produce two strokes, not one contested stroke.
+The only real conflict is editing *the same stroke* on two offline devices,
+which is rare and resolves to the later edit.
+
+Deletions travel as tombstones. Removing a row cannot express a delete in a
+distributed system — the peer still holds it and pushes it straight back — so
+`deletedAt` is set instead and the row remains until purged after 90 days.
+
+### When sync runs — and when it must not
+
+Triggered on app foreground, on regaining network, five seconds after the last
+annotation, and on demand from Settings.
+
+**Never while the performance view is open.** A page turn is the one hard
+real-time requirement in this app, and a network round trip contending with it
+— for the main thread, for IndexedDB write locks, or simply by causing a
+re-render — is not a trade worth making. `useSuspendSyncWhilePlaying` holds
+sync off for the whole session and replays any trigger that arrived meanwhile
+on the way out, so nothing is lost, only deferred. The sync indicator is
+likewise absent from the performance view.
+
+### Markings for scores you do not have
+
+Because files never sync, a second device routinely receives annotations for a
+document it has no copy of. Those are stored silently and appear the moment a
+PDF with a matching hash is imported. The library says how many there are, so
+the state is explicable rather than mysterious.
+
+The same applies inside a setlist: entries the device cannot resolve are kept
+with their title, ready to be shown greyed out.
+
+### What does not sync
+
+**Pedal bindings**, deliberately — they describe the physical pedal attached to
+one device, not a preference of the user. Crop, fit mode and spread *do* sync:
+they are properties of how a document reads, not of the hardware.
+
+Thumbnails do not sync either; they are regenerated locally from the file.
+
+### Testing without a Supabase project
+
+Two suites, both offline (`npm test`):
+
+- `npm run test:rls` runs the real migration SQL against real Postgres
+  ([PGlite](https://pglite.dev), Postgres compiled to WASM) with a shim for
+  Supabase's `auth.uid()`. It proves a user cannot read, update or delete
+  another user's rows, that forging `user_id` on insert is refused, that RLS is
+  enabled on every table, and that `delete_my_data` really removes rows.
+  Mocking a database would have happily got all of this wrong.
+- `npm run test:merge` simulates two devices and a server against the real
+  merge functions: a stroke propagates, a delete propagates and is not
+  resurrected, concurrent edits converge on the later write, stale rows are
+  ignored, and provisional or ensemble strokes are never uploaded.
+
+### Feature flag
+
+`VITE_SYNC_ENABLED=false` removes sync at **build time**, not just at runtime.
+Verified: with credentials configured the bundle is 985 kB and contains the
+Supabase client; with the flag off it is 756 kB and contains no trace of it.
+
 ## Backup
 
 **Settings → Backup** exports the whole library as a zip: every PDF, all

@@ -9,8 +9,11 @@
  * Defaults to enabled so a plain `npm run dev` exercises the same paths a
  * release build does.
  */
-export const SYNC_ENABLED: boolean =
-  (import.meta.env.VITE_SYNC_ENABLED ?? 'true').toString().toLowerCase() !== 'false';
+// Written as a direct comparison so Vite's define-replacement leaves a plain
+// `false` behind, which Rollup can then use to drop the Supabase client and its
+// entire dependency tree from the bundle. A cleverer expression here would
+// still work at runtime but would defeat the dead-code elimination.
+export const SYNC_ENABLED: boolean = import.meta.env.VITE_SYNC_ENABLED !== 'false';
 
 /**
  * Sync additionally needs somewhere to sync *to*. Absent credentials is not an

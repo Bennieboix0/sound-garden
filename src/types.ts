@@ -51,10 +51,21 @@ export interface Thumbnail {
   dataUrl: string;
 }
 
+export interface SetlistRemoteItem {
+  contentHash: string;
+  /** The title the owner gave it, so a missing entry can still be named. */
+  title: string;
+}
+
 export interface Setlist {
   id: string;
   name: string;
   scoreIds: string[];
+  /**
+   * The list as it exists on the server, including entries for documents this
+   * device has no file for. Absent on purely local setlists.
+   */
+  remoteItems?: SetlistRemoteItem[];
   createdAt: number;
   updatedAt: number;
 }
@@ -85,6 +96,9 @@ export interface Settings {
   keepScreenAwake: boolean;
   /** Bumped when the bundled demo library changes, so seeding re-runs. */
   seedVersion: number;
+  /** Highest server updatedAt already pulled. 0 means "everything". */
+  syncCursor?: number;
+  lastSyncedAt?: number;
 }
 
 export type LibraryLayout = 'grid' | 'list';

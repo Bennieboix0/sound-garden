@@ -5,6 +5,8 @@ import { useElementSize, useDevicePixelRatio } from '../../hooks/useElementSize'
 import { useIdleUI } from '../../hooks/useIdleUI';
 import { usePedal } from '../../hooks/usePedal';
 import { useWakeLock } from '../../hooks/useWakeLock';
+import { syncClient } from '../../sync/client';
+import { useSuspendSyncWhilePlaying } from '../../sync/useSync';
 import { PageRenderer, type PageRequest } from '../../pdf/render';
 import { useSettings } from '../../state/SettingsProvider';
 import type { FitMode, PedalAction, Score } from '../../types';
@@ -60,6 +62,8 @@ export default function PerformanceView({
   const [lastMarkedPage, setLastMarkedPage] = useState<number | null>(null);
 
   useWakeLock(settings.keepScreenAwake);
+  // Nothing may contend with a page turn. Sync resumes on the way out.
+  useSuspendSyncWhilePlaying(true);
 
   const [pos, setPos] = useState(() => ({
     index: Math.min(Math.max(0, startIndex), Math.max(0, scores.length - 1)),
@@ -278,7 +282,12 @@ export default function PerformanceView({
               crop={request.crop}
               editing={annotating}
               pen={pen}
-              onStrokeAdded={setLastMarkedPage}
+              onStrokeAdded={(page) => {
+                setLastMarkedPage(page);
+                // Debounced: fires 5s after the hand stops, and still only once
+                // the performance view has been left.
+                syncClient.noteLocalChange();
+              }}
             />
           )}
         />

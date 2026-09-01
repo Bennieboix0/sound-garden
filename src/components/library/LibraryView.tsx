@@ -15,6 +15,7 @@ import AddToSetlistDialog from './AddToSetlistDialog';
 import ScoreCard from './ScoreCard';
 import ScoreRow from './ScoreRow';
 import ScannerView from '../scan/ScannerView';
+import SyncIndicator from './SyncIndicator';
 import { filterAndSort, useScores, useTagCounts, useThumbnails, type SortKey } from './useLibrary';
 
 const LAYOUT_KEY = 'sound-garden:layout';
@@ -146,7 +147,10 @@ export default function LibraryView() {
       className="relative min-h-[60vh]"
     >
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto text-3xl font-bold tracking-tight">Library</h1>
+        <div className="mr-auto">
+          <h1 className="text-3xl font-bold tracking-tight">Library</h1>
+          <SyncIndicator />
+        </div>
         <input
           ref={fileInput}
           type="file"
