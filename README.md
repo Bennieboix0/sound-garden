@@ -606,21 +606,71 @@ performance toolbar.
 
 ### Live page follow
 
-`usePageFollow` subscribes a member's device to the director's current page over
-Supabase Realtime. Two rules shape it:
+A director broadcasts their position; members' devices follow. Start it from the
+performance toolbar — **Lead** for a director, **Follow** for a member — and it
+is opt-in per session, never automatic.
 
-- **The pedal always wins.** Any local page turn drops the device out of follow
-  mode until the musician asks to rejoin. A reader who is lost needs to find
-  their own place more than they need to agree with the director, and a device
-  that fights the person holding it is worse than one that is briefly out of
-  step.
-- **A dropped connection is not an error.** It shows as "not following" and
-  changes nothing else; manual turns work exactly as always.
+**Broadcast, never database writes.** A conductor turning pages for forty
+minutes must not leave forty minutes of rows behind, and the server has no
+business knowing what page any student is on. There is no table recording a
+member's position, and a test asserts none appears.
 
-This is the one part of sync allowed to run during the performance view,
-because it is a fire-and-forget broadcast of two numbers rather than a data
-sync. The send is never awaited: a director's own page turn cannot wait on a
-socket.
+**Broadcast permission is enforced server-side.** Realtime Authorization
+applies RLS to `realtime.messages`
+([`0003_follow_channel.sql`](supabase/migrations/0003_follow_channel.sql)), so a
+member cannot publish page turns even with a hand-crafted client. Members may
+receive on their own ensemble's channel; only that ensemble's director may
+send; a director of one group has no rights over another's; and a malformed
+topic is refused rather than falling through to allowed. The client opens the
+channel as `private`, which is what makes Realtime consult those policies.
+
+**Messages carry state, not deltas:**
+
+```ts
+{ v, contentHash, title, page, seq, sentAt }
+```
+
+A member joining mid-rehearsal is correct from the next message; a dropped
+message self-corrects on the following one; no resynchronisation protocol is
+needed. `seq` is monotonic and receivers discard anything not newer, so
+out-of-order delivery cannot walk the score backwards. Receivers resolve
+through `resolvePage` rather than reading `page` directly, so a later protocol
+version can name a place by rehearsal mark or bar without anything downstream
+assuming pages are the only coordinate — an unresolvable coordinate holds the
+page still rather than guessing.
+
+Broadcasts are coalesced to at most ten a second, sent on the leading edge so a
+single turn is never delayed, and never awaited: a director's own page turn
+cannot wait on a socket. A director's session ends explicitly, or after their
+app has been backgrounded for two minutes.
+
+#### Dropping out — the rule that matters most
+
+**Any local page turn exits follow mode immediately.** Pedal, tap zone, toolbar
+button or keyboard, plus entering annotate mode. No confirmation, no delay, and
+a one-tap **Resume** to rejoin. A reader who is lost needs their own place more
+than they need to agree with the director, and a device that fights the person
+holding it is worse than one briefly out of step.
+
+The ordering guarantees are in
+[`src/sync/followGate.ts`](src/sync/followGate.ts) as pure functions, and the
+race is tested **in both directions**: a message already in flight cannot undo a
+pedal press, and a press after a follow jump still wins with nothing able to
+reclaim the device afterwards.
+
+**A dropped connection is not an error.** It reads as "not following" and
+changes nothing else — manual turns work the instant the socket dies, because
+turning a page never goes through the follow path at all.
+
+**If a member does not have the file**, the badge says *"Director is on
+&lt;title&gt;"* and stops there. The app never goes looking for the score;
+the server does not have it and is not allowed to.
+
+The follow indicator is the **one deliberate exception** to "nothing but the
+score while playing": it does not auto-hide. Whether your page turns are coming
+from someone else is not something you should have to go looking for. It stays
+one line in a corner and disappears entirely when no session is running. The
+wake lock behaves identically in follow mode and normal play.
 
 ## Backup
 

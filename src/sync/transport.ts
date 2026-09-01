@@ -3,9 +3,13 @@ import type {
   CropInsets,
   Ensemble,
   EnsembleMember,
+  EnsembleRole,
   FitMode,
   StrokeLayer,
 } from '../types';
+import type { FollowPosition } from './followGate';
+
+export type { FollowPosition };
 
 /**
  * Wire shapes.
@@ -71,14 +75,6 @@ export interface PushPayload {
   scorePrefs: WireScorePrefs[];
 }
 
-/** A director's current page, broadcast to whoever is following. */
-export interface PagePosition {
-  contentHash: string;
-  pageNumber: number;
-  /** Shown to members so they know which piece is being called. */
-  title: string;
-}
-
 export interface AuthUser {
   id: string;
   /**
@@ -142,14 +138,31 @@ export interface SyncTransport {
   // --- Live page follow ----------------------------------------------------
 
   /**
-   * Fire-and-forget. Must never be awaited on a page-turn path: the director's
-   * own turn cannot wait for a socket.
+   * Opens one Realtime broadcast channel for a rehearsal.
+   *
+   * Broadcast, never postgres_changes: a page turn must not write a database
+   * row. The channel is opened as private so Supabase applies the policies in
+   * 0003_follow_channel.sql — broadcast permission is enforced by the server,
+   * not by whether this client chooses to call `broadcast`.
    */
-  broadcastPage(ensembleId: string, position: PagePosition): void;
-  /** Returns an unsubscribe function. */
-  subscribeToPage(
-    ensembleId: string,
-    handler: (position: PagePosition) => void,
-    onConnectionChange?: (connected: boolean) => void,
-  ): () => void;
+  openFollowSession(options: FollowSessionOptions): FollowSession;
+}
+
+export interface FollowSessionOptions {
+  ensembleId: string;
+  role: EnsembleRole;
+  onPosition: (position: FollowPosition) => void;
+  onConnectionChange: (connected: boolean) => void;
+  /** A count, never an identity: nobody learns who else is in the room. */
+  onListenerCount?: (count: number) => void;
+}
+
+export interface FollowSession {
+  /**
+   * Fire-and-forget. Never awaited on a page-turn path — the director's own
+   * turn cannot wait for a socket, and a failed send simply means the next one
+   * corrects it.
+   */
+  broadcast(position: FollowPosition): void;
+  close(): void;
 }

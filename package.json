@@ -12,8 +12,9 @@
     "icons": "python3 scripts/generate_icons.py public/icons",
     "test:rls": "node supabase/tests/rls.test.mjs",
     "test:merge": "esbuild src/sync/engine.ts --bundle --format=esm --outfile=dist-test/engine.mjs --log-level=warning && node supabase/tests/merge.test.mjs",
-    "test": "npm run test:rls && npm run test:ensembles && npm run test:merge",
-    "test:ensembles": "node supabase/tests/ensembles.test.mjs"
+    "test": "npm run test:rls && npm run test:ensembles && npm run test:merge && npm run test:follow",
+    "test:ensembles": "node supabase/tests/ensembles.test.mjs",
+    "test:follow": "esbuild src/sync/followGate.ts --bundle --format=esm --outfile=dist-test/followGate.mjs --log-level=warning && node supabase/tests/follow.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

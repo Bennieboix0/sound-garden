@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../db/db';
 import { clearPage, undoLastStroke, useEnsembleLayersFor, usePageStrokes } from '../../db/annotations';
 import { useEnsembles } from '../../sync/ensembleClient';
+import { usePageFollow } from '../../sync/usePageFollow';
+import { getTransport } from '../../sync/useSync';
+import FollowBadge from './FollowBadge';
 import { useElementSize, useDevicePixelRatio } from '../../hooks/useElementSize';
 import { useIdleUI } from '../../hooks/useIdleUI';
 import { usePedal } from '../../hooks/usePedal';
@@ -63,6 +66,27 @@ export default function PerformanceView({
   const [lastMarkedPage, setLastMarkedPage] = useState<number | null>(null);
   /** Published layers the reader has switched off for this session. */
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
+  /** Set when the director is on a score this device does not hold. */
+  const [missingScore, setMissingScore] = useState<string | null>(null);
+
+  const scoresRef = useRef(scores);
+  scoresRef.current = scores;
+
+  const follow = usePageFollow({
+    transport: getTransport(),
+    onFollowPage: (contentHash, targetPage) => {
+      const at = scoresRef.current.findIndex((score) => score.contentHash === contentHash);
+      if (at === -1) {
+        // We do not have this score, and we never go looking: the file is not
+        // something the server has, or is allowed to have.
+        setMissingScore(contentHash);
+        return;
+      }
+      setMissingScore(null);
+      setDirection('next');
+      setPos({ index: at, page: Math.max(1, targetPage) });
+    },
+  });
 
   useWakeLock(settings.keepScreenAwake);
   // Nothing may contend with a page turn. Sync resumes on the way out.
@@ -160,6 +184,13 @@ export default function PerformanceView({
   );
   const markTargetStrokes = usePageStrokes(current?.contentHash, markTarget, visibleLayers);
 
+  // Director side: broadcast wherever we are. Coalesced inside the hook, and
+  // never awaited, so this cannot delay the director's own turn.
+  useEffect(() => {
+    if (follow.state !== 'leading' || !current) return;
+    follow.report(current.contentHash, page, current.title);
+  }, [follow, current, page]);
+
   // Warm the neighbours, including the first page of the next piece so that a
   // setlist transition costs no more than a page turn inside a piece.
   useEffect(() => {
@@ -169,9 +200,14 @@ export default function PerformanceView({
     const nextPiece =
       page + step > pageCount && index + 1 < scores.length ? buildRequests(index + 1, 1) : [];
     renderer.prefetch([...ahead, ...nextPiece, ...behind]);
+    // `ahead` already covers the follow case: the director's next call is
+    // almost always the following page, so a follow jump lands on a cache hit
+    // and swaps synchronously, exactly like a pedal turn.
   }, [requests, buildRequests, index, page, step, pageCount, scores.length]);
 
   const goNext = useCallback(() => {
+    // Any local intent takes control, before the move. Instant and silent.
+    follow.takeControl();
     setDirection('next');
     setPos((current_) => {
       const at = Math.min(current_.index, Math.max(0, scores.length - 1));
@@ -185,9 +221,10 @@ export default function PerformanceView({
       flash('End of set');
       return current_;
     });
-  }, [scores, settings.defaultSpread, flash]);
+  }, [scores, settings.defaultSpread, flash, follow]);
 
   const goPrev = useCallback(() => {
+    follow.takeControl();
     setDirection('prev');
     setPos((current_) => {
       const at = Math.min(current_.index, Math.max(0, scores.length - 1));
@@ -205,7 +242,7 @@ export default function PerformanceView({
       flash('Start of set');
       return current_;
     });
-  }, [scores, settings.defaultSpread, flash]);
+  }, [scores, settings.defaultSpread, flash, follow]);
 
   const onPedal = useCallback(
     (action: PedalAction) => {
@@ -326,6 +363,16 @@ export default function PerformanceView({
         />
       </div>
 
+      <FollowBadge
+        follow={follow}
+        ensembles={ensembles}
+        missingTitle={
+          missingScore && follow.lastPosition?.contentHash === missingScore
+            ? follow.lastPosition.title
+            : null
+        }
+      />
+
       {/* Position toast. Shows on transitions even while the chrome is hidden. */}
       {toast ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-10 z-30 flex justify-center px-6">
@@ -420,6 +467,24 @@ export default function PerformanceView({
             ]}
           />
 
+          {follow.state === 'off'
+            ? ensembles.map((ensemble) => (
+                <Button
+                  key={`follow-${ensemble.id}`}
+                  size="lg"
+                  onClick={() => follow.start(ensemble.id, ensemble.role)}
+                  className="!border-ink-500 !bg-ink-800 !text-white"
+                  title={
+                    ensemble.role === 'director'
+                      ? `Broadcast your page to ${ensemble.name}`
+                      : `Follow the director of ${ensemble.name}`
+                  }
+                >
+                  {ensemble.role === 'director' ? 'Lead ' : 'Follow '}
+                  {ensemble.name}
+                </Button>
+              ))
+            : null}
           {layersHere.map((ensembleId) => {
             const name = ensembles.find((e) => e.id === ensembleId)?.name ?? 'Ensemble';
             const shown = !hiddenLayers.has(ensembleId);
@@ -451,6 +516,8 @@ export default function PerformanceView({
           <Button
             size="lg"
             onClick={() => {
+              // Drawing is a local activity; it takes the device out of follow.
+              follow.takeControl();
               setAnnotating(true);
               ui.hide();
             }}

@@ -1,9 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './flags';
 import type { Assignment, Ensemble, EnsembleMember } from '../types';
+import { isFollowPosition, type FollowPosition } from './followGate';
 import type {
   AuthUser,
-  PagePosition,
+  FollowSession,
+  FollowSessionOptions,
   PullResult,
   PushPayload,
   SyncTransport,
@@ -452,41 +454,55 @@ export class SupabaseTransport implements SyncTransport {
 
   // --- Live page follow ----------------------------------------------------
 
-  private pageChannels = new Map<string, ReturnType<SupabaseClient['channel']>>();
-
-  private pageChannel(ensembleId: string) {
-    const existing = this.pageChannels.get(ensembleId);
-    if (existing) return existing;
-    const channel = this.client.channel(`ensemble:${ensembleId}:page`, {
-      config: { broadcast: { self: false } },
+  openFollowSession({
+    ensembleId,
+    role,
+    onPosition,
+    onConnectionChange,
+    onListenerCount,
+  }: FollowSessionOptions): FollowSession {
+    const topic = `ensemble:${ensembleId}:follow`;
+    // `private: true` is what makes Realtime consult the RLS policies on
+    // realtime.messages. Without it the channel would be open to anyone who
+    // knows the topic, and the server-side check would never run.
+    const channel = this.client.channel(topic, {
+      config: { private: true, broadcast: { self: false }, presence: { key: '' } },
     });
-    this.pageChannels.set(ensembleId, channel);
-    return channel;
-  }
 
-  broadcastPage(ensembleId: string, position: PagePosition): void {
-    const channel = this.pageChannel(ensembleId);
-    // Deliberately not awaited. A director's page turn must never wait on a
-    // socket; if the send fails, the turn has still happened locally.
-    void channel.send({ type: 'broadcast', event: 'page', payload: position }).catch(() => undefined);
-  }
-
-  subscribeToPage(
-    ensembleId: string,
-    handler: (position: PagePosition) => void,
-    onConnectionChange?: (connected: boolean) => void,
-  ): () => void {
-    const channel = this.pageChannel(ensembleId);
-    channel.on('broadcast', { event: 'page' }, (message) => {
-      const payload = message.payload as PagePosition | undefined;
-      if (payload && typeof payload.pageNumber === 'number') handler(payload);
+    channel.on('broadcast', { event: 'position' }, (message) => {
+      const payload = message.payload as unknown;
+      if (isFollowPosition(payload)) onPosition(payload);
     });
+
+    if (onListenerCount) {
+      // Presence gives a count of who is in the room. Deliberately only ever
+      // read as a number — no names, no identities, nothing about who.
+      const report = () => onListenerCount(Object.keys(channel.presenceState()).length);
+      channel.on('presence', { event: 'sync' }, report);
+      channel.on('presence', { event: 'join' }, report);
+      channel.on('presence', { event: 'leave' }, report);
+    }
+
     channel.subscribe((status) => {
-      onConnectionChange?.(status === 'SUBSCRIBED');
+      const connected = status === 'SUBSCRIBED';
+      onConnectionChange(connected);
+      // Members announce themselves so the director can see a count. Directors
+      // do not, so they are not counted among their own followers.
+      if (connected && role === 'member') {
+        void channel.track({ at: Date.now() }).catch(() => undefined);
+      }
     });
-    return () => {
-      this.pageChannels.delete(ensembleId);
-      void this.client.removeChannel(channel);
+
+    return {
+      broadcast: (position: FollowPosition) => {
+        if (role !== 'director') return;
+        void channel
+          .send({ type: 'broadcast', event: 'position', payload: position })
+          .catch(() => undefined);
+      },
+      close: () => {
+        void this.client.removeChannel(channel);
+      },
     };
   }
 }
