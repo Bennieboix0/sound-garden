@@ -20,8 +20,34 @@ export const SYNC_ENABLED: boolean = import.meta.env.VITE_SYNC_ENABLED !== 'fals
  * error — it is simply a build with no backend configured, and the app stays
  * fully usable.
  */
-export const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL ?? '';
-export const SUPABASE_ANON_KEY: string = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+/**
+ * Read under several names on purpose.
+ *
+ * Vercel's Supabase integration injects `NEXT_PUBLIC_*` variables whatever
+ * framework the project actually uses, and Supabase has renamed the anon key to
+ * the "publishable" key. Accepting all of them means connecting the integration
+ * just works, instead of silently building a local-only app because the names
+ * did not line up.
+ *
+ * Each read is a literal member access so Vite replaces it with a constant at
+ * build time — a dynamic lookup would defeat both the inlining and the dead
+ * code elimination that strips the client when sync is off.
+ *
+ * Only public names are read. The same integration also injects a service role
+ * key and a database password; those carry no public prefix, are never read
+ * here, and must never be exposed to a browser.
+ */
+export const SUPABASE_URL: string =
+  import.meta.env.VITE_SUPABASE_URL ??
+  import.meta.env.NEXT_PUBLIC_SUPABASE_URL ??
+  '';
+
+export const SUPABASE_ANON_KEY: string =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ??
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+  '';
 
 export function isSyncConfigured(): boolean {
   return SYNC_ENABLED && SUPABASE_URL !== '' && SUPABASE_ANON_KEY !== '';

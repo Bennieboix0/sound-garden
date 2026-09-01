@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // Vercel's Supabase integration injects NEXT_PUBLIC_* names whatever the
+  // framework, so expose that prefix too. Secrets from the same integration
+  // (service role key, database password) carry neither prefix and stay out.
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   plugins: [
     react(),
     VitePWA({
