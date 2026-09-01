@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { addStroke, usePageStrokes } from '../../db/annotations';
-import type { AnnotationTool, CropInsets, Stroke } from '../../types';
+import type { AnnotationTool, CropInsets, Stroke, StrokeLayer } from '../../types';
 
 export interface PenSettings {
   tool: AnnotationTool;
@@ -20,22 +20,25 @@ const MIN_POINT_GAP = 1.6;
  * rather than sliding them off it. The original PDF is never modified.
  */
 export default function AnnotationLayer({
-  scoreId,
+  contentHash,
   pageNumber,
   crop,
   editing,
   pen,
+  layer = 'personal',
   onStrokeAdded,
 }: {
-  scoreId: string;
+  /** Markings are keyed to the document's content, not to a local row id. */
+  contentHash: string;
   pageNumber: number;
   crop: CropInsets;
   editing: boolean;
   pen: PenSettings;
+  layer?: StrokeLayer;
   onStrokeAdded?: (pageNumber: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const strokes = usePageStrokes(scoreId, pageNumber);
+  const strokes = usePageStrokes(contentHash, pageNumber);
   const live = useRef<number[] | null>(null);
   /** Set once a stylus is seen, after which touch input is treated as palm. */
   const penSeen = useRef(false);
@@ -176,7 +179,7 @@ export default function AnnotationLayer({
       paint();
       return;
     }
-    void addStroke(scoreId, pageNumber, { ...pen, points }).then(() =>
+    void addStroke(contentHash, pageNumber, { ...pen, points }, { layer }).then(() =>
       onStrokeAdded?.(pageNumber),
     );
     paint();

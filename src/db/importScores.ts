@@ -1,4 +1,5 @@
 import { db, newId } from './db';
+import { provisionalHash, sha256 } from './contentHash';
 import { detectCrop, renderThumbnail } from '../pdf/analyze';
 import { loadDocumentFromData } from '../pdf/pdfjs';
 import type { CropInsets, Score } from '../types';
@@ -97,8 +98,19 @@ export async function importPdf(
       crop = await detectCrop(doc).catch(() => NO_CROP);
     }
 
+    // Hashed from the blob, not the buffer handed to pdf.js — that one has
+    // been transferred to the worker and detached by now.
+    const id = newId();
+    const contentHash = await sha256(file).catch((err: unknown) => {
+      // Web Crypto needs a secure context. Carry on locally with a provisional
+      // hash; backfillContentHashes() will upgrade it if that changes.
+      console.warn('[sound-garden] could not hash score content', err);
+      return provisionalHash(id);
+    });
+
     const score: Score = {
-      id: newId(),
+      id,
+      contentHash,
       title,
       artist,
       key: overrides.key ?? '',

@@ -16,6 +16,14 @@ export type FitMode = 'width' | 'page';
  */
 export interface Score {
   id: string;
+  /**
+   * SHA-256 of the PDF bytes, lowercase hex. This is the identity a score has
+   * across devices — the local `id` is meaningless anywhere else. Scores
+   * imported before content addressing, or on a device where crypto.subtle is
+   * unavailable, carry a provisional `local:<id>` value until backfilled; see
+   * PROVISIONAL_HASH_PREFIX.
+   */
+  contentHash: string;
   title: string;
   artist: string;
   key: string;
@@ -96,6 +104,10 @@ export interface Stroke {
   points: number[];
 }
 
+/**
+ * Legacy shape: one row per page holding an array of strokes. Kept only so the
+ * v3 migration can read it. Nothing writes this any more.
+ */
 export interface PageAnnotation {
   /** `${scoreId}:${pageNumber}` */
   id: string;
@@ -103,6 +115,60 @@ export interface PageAnnotation {
   pageNumber: number;
   strokes: Stroke[];
   updatedAt: number;
+}
+
+/**
+ * Which layer a stroke belongs to. Personal markings are private to their
+ * author; the ensemble layer is published by a director and is read-only to
+ * everyone else.
+ */
+export type StrokeLayer = 'personal' | 'ensemble';
+
+/**
+ * A stroke as an independently addressable record.
+ *
+ * Strokes are the unit of sync, not pages. They are small, immutable once
+ * drawn, and never overlap in meaning, so last-write-wins per stroke id makes
+ * genuine conflicts vanishingly rare — two people drawing on the same page at
+ * once produces two strokes, not a contested one.
+ */
+export interface StrokeRecord extends Stroke {
+  /** Client-generated uuid. Stable across devices. */
+  id: string;
+  /** Identifies the *document*, not the local score row. */
+  contentHash: string;
+  pageNumber: number;
+  layer: StrokeLayer;
+  /** Server user id once signed in; null for purely local markings. */
+  authorId: string | null;
+  createdAt: number;
+  updatedAt: number;
+  /**
+   * Soft delete. Absent means live. A hard delete would be undone the moment
+   * another device re-synced the row it still has, so deletions have to travel
+   * as data. Purged locally after TOMBSTONE_TTL_MS.
+   *
+   * Stored as absent-or-number rather than null because IndexedDB cannot index
+   * null: the `deletedAt` index therefore contains exactly the dead rows, which
+   * is what the purge wants to scan.
+   */
+  deletedAt?: number;
+}
+
+/** What a queued change refers to. */
+export type SyncEntity = 'stroke' | 'setlist' | 'scorePrefs';
+
+/**
+ * A local change waiting to be pushed. Holds only a reference: the drain reads
+ * the entity's current state, so repeated edits collapse into one entry and the
+ * queue stays bounded by the number of distinct entities, not the edit count.
+ */
+export interface SyncQueueEntry {
+  /** Auto-incremented by Dexie; the monotonic local sequence number. */
+  seq?: number;
+  entity: SyncEntity;
+  entityId: string;
+  queuedAt: number;
 }
 
 export function annotationId(scoreId: string, pageNumber: number): string {

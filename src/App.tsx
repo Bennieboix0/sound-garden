@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { SettingsProvider } from './state/SettingsProvider';
 import { hrefFor, useRoute, type Route } from './state/router';
 import { seedLibraryIfNeeded } from './db/seed';
+import { backfillContentHashes } from './db/backfill';
 import LibraryView from './components/library/LibraryView';
 import SetlistsView from './components/setlists/SetlistsView';
 import SetlistEditor from './components/setlists/SetlistEditor';
@@ -73,6 +74,19 @@ function Chrome({ route, banner }: { route: Route; banner?: string | null }) {
 function Bootstrap() {
   const route = useRoute();
   const [seedError, setSeedError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Finishes what the v3 migration could not do inside a versionchange
+    // transaction: hash existing scores and re-key their markings. Idempotent,
+    // and a no-op once every score has a real hash.
+    backfillContentHashes()
+      .then((result) => {
+        if (result.hashed > 0 || result.tombstonesPurged > 0) {
+          console.info('[sound-garden] backfill', result);
+        }
+      })
+      .catch((err: unknown) => console.error('[sound-garden] backfill failed', err));
+  }, []);
 
   useEffect(() => {
     seedLibraryIfNeeded().catch((err: unknown) => {

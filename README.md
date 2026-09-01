@@ -134,7 +134,8 @@ Dexie over IndexedDB, six tables:
 | `files` | The PDF blobs, keyed by score id |
 | `thumbs` | First-page thumbnails as data URLs |
 | `setlists` | Name + ordered array of score ids |
-| `annotations` | Pen and highlighter strokes, keyed `scoreId:pageNumber` |
+| `strokes` | One row per pen/highlighter stroke, keyed by content hash |
+| `syncQueue` | Local changes waiting to be pushed |
 | `settings` | The single settings record |
 
 **PDF bytes are deliberately in their own table.** Listing the library reads
@@ -336,6 +337,114 @@ Design decisions worth knowing:
 - Inversion applies to the score canvas only, so a red pen stays red in dark
   mode rather than turning cyan.
 
+## Sync foundations (Phase 0)
+
+Nothing here talks to a network. This is the local groundwork that makes sync
+possible at all, and it stands on its own: the app behaves identically with or
+without an account.
+
+### The PDF never leaves the device
+
+**This is a hard constraint, not a preference.** Scores are frequently
+copyrighted material that the user is licensed to hold but not to redistribute,
+and pushing a file to a server is redistribution regardless of intent. So the
+sync design has exactly one thing to say about a PDF: its **SHA-256 hash**.
+
+That hash is what makes cross-device markings possible without the file. A
+score's local row `id` is meaningless anywhere else, but the same PDF hashes
+identically on a phone and a laptop, so annotations key to
+`contentHash + pageNumber` and land in the right place on any device that
+happens to hold the same document. A device that does *not* hold it stores the
+markings anyway and shows them the moment a matching file is imported.
+
+Nothing else about the file is transmitted — not the bytes, not the filename,
+not page images, not extracted text.
+
+### Content addressing
+
+`Score.contentHash` is the SHA-256 of the PDF bytes, computed on import via
+`crypto.subtle` ([`src/db/contentHash.ts`](src/db/contentHash.ts)).
+
+Web Crypto is only available in a secure context, and hashing cannot happen
+inside an IndexedDB upgrade (see below), so a score can temporarily carry a
+provisional `local:<id>` hash instead. Provisional hashes are device-local by
+construction and are never sent anywhere.
+
+Two scores with identical bytes share a content hash and therefore share
+markings. That is the intended behaviour — it is the same document — but it
+does mean importing one PDF twice gives you one set of annotations, not two.
+
+### Strokes are the unit of sync
+
+Markings moved from one row per page holding an array, to **one row per
+stroke**:
+
+```ts
+interface StrokeRecord extends Stroke {
+  id: string;            // client-generated uuid, stable across devices
+  contentHash: string;   // the document, not the local score row
+  pageNumber: number;
+  layer: 'personal' | 'ensemble';
+  authorId: string | null;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;    // tombstone; absent means live
+}
+```
+
+Per-stroke identity is what makes conflict resolution trivial. Strokes are
+small, immutable once drawn, and never contest each other — two people marking
+the same bar at the same time produce two strokes, not a disputed one. So
+last-write-wins on `updatedAt` per stroke id is sufficient, and no merge
+algorithm is needed.
+
+The 0–1 uncropped-page-space coordinates are unchanged. They were already
+device-independent, which is exactly what cross-device sync needs.
+
+### Deletes have to travel
+
+Removing a row cannot express a deletion in a distributed system: the other
+device still holds it and would push it straight back on its next sync. So
+deletion sets `deletedAt` and the row stays. Tombstones are purged locally
+after **90 days**, which is generous for a tablet left in a case over a school
+holiday.
+
+`deletedAt` is stored as *absent-or-number* rather than null, because
+IndexedDB cannot index null. The `deletedAt` index therefore contains exactly
+the dead rows, which is precisely what the purge needs to scan.
+
+### Why the migration happens in two stages
+
+The v3 Dexie upgrade restructures annotations and stamps every score with a
+provisional hash. It deliberately does **not** compute real hashes, because
+awaiting `crypto.subtle` inside an IndexedDB `versionchange` transaction lets
+that transaction auto-close, aborting the migration part-way.
+
+Real hashing therefore runs afterwards in
+[`src/db/backfill.ts`](src/db/backfill.ts), on ordinary transactions where
+awaiting is safe. It is idempotent, resumable, and commits each score together
+with its own strokes, so an interrupted backfill simply continues next launch.
+
+Verified against a hand-built v2 database: scores, PDFs, thumbnails, setlists,
+tags and crops all survive; strokes migrate with their order, coordinates,
+tool and width intact; markings whose score no longer exists are dropped rather
+than orphaned; and the resulting hashes match `shasum -a 256` on the same
+files.
+
+### The sync queue
+
+`syncQueue` records *references* to changed entities, never payloads — the
+drain reads current state at push time. Repeated edits to one stroke therefore
+collapse into a single entry, so the queue is bounded by the number of distinct
+changed entities rather than by how much the user has drawn. The
+auto-incremented `seq` is the monotonic local sequence number.
+
+### Feature flag
+
+`VITE_SYNC_ENABLED=false` compiles the whole feature out. With it off nothing
+is queued, and the app is exactly what it was before: local, accountless, and
+complete. See [`src/sync/flags.ts`](src/sync/flags.ts).
+
 ## Backup
 
 **Settings → Backup** exports the whole library as a zip: every PDF, all
@@ -345,6 +454,12 @@ metadata, thumbnails, setlists and settings.
 manifest.json          scores, setlists, settings, thumbnails, annotations
 scores/<id>.pdf        the original PDFs, stored uncompressed
 ```
+
+Backup archives are v3. v1 and v2 archives still restore, but their markings
+are dropped rather than guessed at: the old format keyed annotations to a local
+score id, and re-keying them to a content hash is not possible without the
+original file. Strokes restore by content hash, so a backup carries markings
+for documents the target device does not have.
 
 PDFs are already compressed, so they are stored at level 0 — re-deflating them
 costs time for nothing. Zipping runs on fflate's worker so the UI stays

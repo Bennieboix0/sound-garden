@@ -5,8 +5,11 @@ import type {
   ScoreFile,
   Setlist,
   Settings,
+  StrokeRecord,
+  SyncQueueEntry,
   Thumbnail,
 } from '../types';
+import { provisionalHash } from './contentHash';
 
 export const DEFAULT_SETTINGS: Settings = {
   id: 'settings',
@@ -38,7 +41,10 @@ export class SoundGardenDB extends Dexie {
   thumbs!: Table<Thumbnail, string>;
   setlists!: Table<Setlist, string>;
   settings!: Table<Settings, string>;
+  /** Legacy page-keyed annotations. Read only by the v3 upgrade. */
   annotations!: Table<PageAnnotation, string>;
+  strokes!: Table<StrokeRecord, string>;
+  syncQueue!: Table<SyncQueueEntry, number>;
 
   constructor() {
     super('sound-garden');
@@ -55,6 +61,56 @@ export class SoundGardenDB extends Dexie {
     this.version(2).stores({
       annotations: 'id, scoreId',
     });
+
+    // v3 makes local data syncable: scores gain a content hash, and page-keyed
+    // stroke arrays become individually addressable stroke rows.
+    this.version(3)
+      .stores({
+        scores: 'id, title, artist, dateAdded, contentHash, *tags',
+        strokes: 'id, contentHash, [contentHash+pageNumber], updatedAt, deletedAt',
+        syncQueue: '++seq, [entity+entityId], queuedAt',
+      })
+      .upgrade(async (tx) => {
+        // Everything in here must be pure IndexedDB work. Awaiting anything
+        // else — crypto.subtle in particular — lets the versionchange
+        // transaction auto-close mid-migration and the upgrade fails. Real
+        // hashes are computed afterwards by backfillContentHashes().
+        const scores = await tx.table<Score>('scores').toArray();
+        const hashByScoreId = new Map<string, string>();
+        for (const score of scores) {
+          const hash = score.contentHash || provisionalHash(score.id);
+          hashByScoreId.set(score.id, hash);
+          if (score.contentHash !== hash) {
+            await tx.table<Score>('scores').update(score.id, { contentHash: hash });
+          }
+        }
+
+        const legacy = await tx.table<PageAnnotation>('annotations').toArray();
+        const strokes = tx.table<StrokeRecord>('strokes');
+        for (const record of legacy) {
+          const contentHash = hashByScoreId.get(record.scoreId);
+          // A page of markings whose score is gone has nothing to key on.
+          if (!contentHash) continue;
+          const stamp = record.updatedAt || Date.now();
+          for (const [index, stroke] of record.strokes.entries()) {
+            await strokes.add({
+              ...stroke,
+              // Order within a page was previously array position; preserve it
+              // as createdAt so strokes keep stacking in the same order.
+              id: crypto.randomUUID(),
+              contentHash,
+              pageNumber: record.pageNumber,
+              layer: 'personal',
+              authorId: null,
+              createdAt: stamp + index,
+              updatedAt: stamp + index,
+            });
+          }
+        }
+      });
+
+    // Dropped separately from v3 so the upgrade above can still read it.
+    this.version(4).stores({ annotations: null });
   }
 }
 
@@ -78,20 +134,40 @@ export function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Deletes a score and everything attached to it, in one transaction. */
+/**
+ * Deletes a score and everything attached to it, in one transaction.
+ *
+ * Markings are tombstoned rather than dropped, so the deletion is something
+ * that can travel: a hard delete would simply be re-sent by the next device to
+ * sync. Strokes are left alone entirely if another score still points at the
+ * same content, which happens when the same PDF has been imported twice.
+ */
 export async function deleteScore(id: string): Promise<void> {
+  const score = await db.scores.get(id);
+  const sharesContent = score
+    ? (await db.scores.where('contentHash').equals(score.contentHash).primaryKeys()).some(
+        (other) => other !== id,
+      )
+    : true;
+
+  // Array form: Dexie's typed overloads only reach five tables positionally.
   await db.transaction(
     'rw',
-    db.scores,
-    db.files,
-    db.thumbs,
-    db.setlists,
-    db.annotations,
+    [db.scores, db.files, db.thumbs, db.setlists, db.strokes, db.syncQueue],
     async () => {
       await db.scores.delete(id);
       await db.files.delete(id);
       await db.thumbs.delete(id);
-      await db.annotations.where('scoreId').equals(id).delete();
+      if (score && !sharesContent) {
+        const now = Date.now();
+        const strokes = await db.strokes.where('contentHash').equals(score.contentHash).toArray();
+        for (const stroke of strokes) {
+          if (stroke.deletedAt !== undefined) continue;
+          await db.strokes.update(stroke.id, { deletedAt: now, updatedAt: now });
+          await db.syncQueue.where('[entity+entityId]').equals(['stroke', stroke.id]).delete();
+          await db.syncQueue.add({ entity: 'stroke', entityId: stroke.id, queuedAt: now });
+        }
+      }
       const affected = await db.setlists.filter((s) => s.scoreIds.includes(id)).toArray();
       for (const setlist of affected) {
         await db.setlists.put({

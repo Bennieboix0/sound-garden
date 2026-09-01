@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../db/db';
-import { clearPage, popStroke, usePageStrokes } from '../../db/annotations';
+import { clearPage, undoLastStroke, usePageStrokes } from '../../db/annotations';
 import { useElementSize, useDevicePixelRatio } from '../../hooks/useElementSize';
 import { useIdleUI } from '../../hooks/useIdleUI';
 import { usePedal } from '../../hooks/usePedal';
@@ -145,7 +145,7 @@ export default function PerformanceView({
   const pagesOnScreen = requests.map((request) => request.pageNumber);
   const markTarget =
     lastMarkedPage !== null && pagesOnScreen.includes(lastMarkedPage) ? lastMarkedPage : page;
-  const markTargetStrokes = usePageStrokes(current?.id, markTarget);
+  const markTargetStrokes = usePageStrokes(current?.contentHash, markTarget);
 
   // Warm the neighbours, including the first page of the next piece so that a
   // setlist transition costs no more than a page turn inside a piece.
@@ -271,7 +271,9 @@ export default function PerformanceView({
           direction={direction}
           renderOverlay={(request) => (
             <AnnotationLayer
-              scoreId={request.scoreId}
+              contentHash={
+                scores.find((score) => score.id === request.scoreId)?.contentHash ?? ''
+              }
               pageNumber={request.pageNumber}
               crop={request.crop}
               editing={annotating}
@@ -444,8 +446,8 @@ export default function PerformanceView({
             onChange={setPen}
             canUndo={markTargetStrokes.length > 0}
             pageLabel={`page ${markTarget}`}
-            onUndo={() => void popStroke(current.id, markTarget)}
-            onClearPage={() => void clearPage(current.id, markTarget)}
+            onUndo={() => void undoLastStroke(current.contentHash, markTarget)}
+            onClearPage={() => void clearPage(current.contentHash, markTarget)}
             onDone={() => setAnnotating(false)}
           />
         </div>
