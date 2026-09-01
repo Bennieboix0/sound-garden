@@ -73,6 +73,8 @@ export interface Settings {
   tapZones: boolean;
   defaultFitMode: FitMode;
   defaultSpread: boolean;
+  /** Hold a screen wake lock while a score is open. */
+  keepScreenAwake: boolean;
   /** Bumped when the bundled demo library changes, so seeding re-runs. */
   seedVersion: number;
 }

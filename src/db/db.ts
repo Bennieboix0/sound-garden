@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tapZones: true,
   defaultFitMode: 'width',
   defaultSpread: false,
+  keepScreenAwake: true,
   seedVersion: 0,
 };
 

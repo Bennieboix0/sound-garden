@@ -204,11 +204,42 @@ first time you open it, and it is always reversible from the crop tool's
   the score on every turn would be intolerable mid-song.
 - **Touch is handled by tap zones, not pointer events**, because every tap
   emits a `pointermove` that would otherwise reveal the toolbar.
-- **A screen wake lock is held** while the view is open. A display that dims two
-  bars into a tune is the worst failure mode this app has.
+- **A screen wake lock is held** while a score is open, so the display never
+  dims or sleeps mid-piece. Page turns come from a pedal, so the device can go
+  many minutes with no input at all and the OS has no way to know anyone is
+  looking at it. See below.
 - Fit mode and single/spread are saved **per score**, not globally: a dense
   score wants fit-page, a sparse one fit-width. The Settings screen sets the
   default for scores you have not chosen for.
+
+### Keeping the screen awake
+
+[`src/hooks/useWakeLock.ts`](src/hooks/useWakeLock.ts) holds a
+`navigator.wakeLock` screen lock for as long as a score is open, and releases it
+on the way out. It is a setting (**Settings → Display → Keep the screen awake**,
+on by default).
+
+The lock is **re-acquired rather than assumed to persist**. The platform takes
+it away whenever the tab stops being visible — switching apps, locking the
+phone, sometimes just a notification — and never gives it back on its own. So
+the hook listens both for `visibilitychange` and for the sentinel's own
+`release` event, and takes a fresh lock each time it is dropped while the score
+is still on screen.
+
+Where it cannot work, Settings says so rather than failing silently:
+
+| Situation | Behaviour |
+| --- | --- |
+| Chrome, Edge, Safari 16.4+, Firefox 126+ over https or localhost | Works |
+| Any plain-http address, e.g. a phone pointed at a dev server on the LAN | The API is hidden entirely outside a secure context. Settings explains this and disables the toggle. |
+| Older browsers with no Screen Wake Lock API | Same — named explicitly in Settings. |
+
+There is deliberately **no silent-video fallback** for the last two rows. The
+usual trick is to loop a tiny hidden video, which does keep some older devices
+awake, but it depends on autoplay policy, costs bundle weight, and only helps
+browsers that are years out of date. Saying plainly that the feature is
+unavailable is more useful than a hack that may or may not fire. If you need it
+on a phone during development, serve over https rather than plain http.
 
 ### Routing
 
@@ -368,3 +399,5 @@ afterwards at the owner's request.
   the UI briefly behind a spinner. It has not needed a worker in practice.
 - Annotations are stroke-based only: no text boxes, shapes, or erasing part of
   a stroke. Undo and clear-page are the editing tools.
+- Keeping the screen awake needs a secure context. Over plain http the browser
+  hides the API completely and there is no fallback.

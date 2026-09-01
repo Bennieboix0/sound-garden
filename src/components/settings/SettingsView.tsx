@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/db';
 import { useSettings } from '../../state/SettingsProvider';
+import { wakeLockSupport } from '../../hooks/useWakeLock';
 import type { FitMode } from '../../types';
 import { SegmentedControl, Toggle } from '../ui/controls';
 import BackupPanel from './BackupPanel';
@@ -32,6 +33,19 @@ function DisplaySettings() {
           description="A brief slide as the page changes. The new page is already rendered either way, so this never slows a turn down."
           checked={settings.pageAnimation}
           onChange={(value) => update({ pageAnimation: value })}
+        />
+        <Toggle
+          label="Keep the screen awake"
+          description={
+            wakeLockSupport() === 'supported'
+              ? 'Stops the display dimming or sleeping while a score is open. Page turns come from a pedal, so the device may see no input for a whole piece.'
+              : wakeLockSupport() === 'insecure'
+                ? 'Unavailable: browsers only allow this over https (or on localhost). This page is on a plain http address.'
+                : 'Unavailable: this browser has no Screen Wake Lock support. Try Chrome, Edge, Safari 16.4+, or Firefox 126+.'
+          }
+          checked={settings.keepScreenAwake}
+          disabled={wakeLockSupport() !== 'supported'}
+          onChange={(value) => update({ keepScreenAwake: value })}
         />
         <Toggle
           label="Tap zones"

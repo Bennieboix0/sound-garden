@@ -59,7 +59,7 @@ export default function PerformanceView({
   /** Which page undo and clear act on when a spread is showing. */
   const [lastMarkedPage, setLastMarkedPage] = useState<number | null>(null);
 
-  useWakeLock(true);
+  useWakeLock(settings.keepScreenAwake);
 
   const [pos, setPos] = useState(() => ({
     index: Math.min(Math.max(0, startIndex), Math.max(0, scores.length - 1)),
