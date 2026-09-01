@@ -519,9 +519,13 @@ they are properties of how a document reads, not of the hardware.
 
 Thumbnails do not sync either; they are regenerated locally from the file.
 
-### Testing without a Supabase project
+### Testing
 
-Two suites, both offline (`npm test`):
+`npm test` runs everything that needs no backend. `npm run test:live` adds
+verification against a real Supabase project, and skips cleanly when
+`.env.local` has no credentials.
+
+Four suites, all offline (`npm test`):
 
 - `npm run test:rls` runs the real migration SQL against real Postgres
   ([PGlite](https://pglite.dev), Postgres compiled to WASM) with a shim for
@@ -533,6 +537,42 @@ Two suites, both offline (`npm test`):
   merge functions: a stroke propagates, a delete propagates and is not
   resurrected, concurrent edits converge on the later write, stale rows are
   ignored, and provisional or ensemble strokes are never uploaded.
+- `npm run test:ensembles` covers the ensemble privacy boundary.
+- `npm run test:follow` covers the page-follow override rule in both
+  directions, and the Realtime channel policies.
+
+#### Verified against a live project
+
+`npm run test:live` signs in real anonymous clients over the network and checks
+the things only a live server can answer — whether Supabase actually applies
+the policies, rather than whether the SQL is correct in isolation. 27 checks,
+all passing, including:
+
+- a user cannot read another user's stroke through the real API, and forging
+  `user_id` on insert is refused;
+- a `local:` provisional hash is rejected by the schema, so an unhashed score's
+  markings cannot be uploaded even by a broken client;
+- last-write-wins and tombstones behave the same on the server as they do in
+  the offline simulation;
+- an outsider cannot list ensembles or harvest join codes, and a wrong code
+  returns nothing rather than confirming an ensemble exists;
+- a director cannot see a student's personal markings;
+- a member can receive the published layer but cannot publish or edit it;
+- **a member's hand-crafted Realtime broadcast reaches nobody**, while the
+  director's next legitimate broadcast still arrives — the control that proves
+  the silence was the policy refusing them, not a dead channel.
+
+The test creates real rows and deletes them again, and reports anything left
+behind.
+
+Two project settings this depends on, neither of which the app can set:
+**anonymous sign-ins must be enabled** (that is the whole display-name-only
+mechanism), and **captcha protection must be off**. The second is not a
+convenience: hCaptcha and Turnstile are third-party scripts that fingerprint
+the browser, and shipping one onto a child's device to let them join a
+rehearsal would break the no-third-party-SDK rule far more seriously than it
+protects anything. Use the per-hour rate limits on the same settings page
+instead.
 
 ### Feature flag
 

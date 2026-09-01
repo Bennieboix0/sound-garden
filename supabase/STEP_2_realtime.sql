@@ -1,3 +1,12 @@
+-- Sound Garden — STEP 2 of 2: Realtime channel authorization.
+--
+-- Run this AFTER step 1, as a separate query.
+--
+-- These policies are what stop a member publishing page turns into their own
+-- rehearsal with a hand-crafted client. realtime.messages already has row level
+-- security enabled by Supabase and is owned by an internal role, so this file
+-- only creates policies on it — it does not try to alter the table.
+
 -- Sound Garden — live page follow: channel authorization.
 --
 -- Page turns during a rehearsal are Realtime *broadcast* messages, never
@@ -60,3 +69,10 @@ create policy sound_garden_follow_broadcast on realtime.messages
 -- Deliberately absent: any table recording where a member currently is. The
 -- director's position is broadcast and then forgotten; a member's position is
 -- never transmitted at all.
+
+
+-- Verification: should return two rows.
+select policyname, cmd
+from pg_policies
+where schemaname = 'realtime' and tablename = 'messages'
+  and policyname like 'sound_garden%';

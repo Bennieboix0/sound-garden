@@ -180,6 +180,10 @@ const REALTIME_SHIM = `
     extension text not null,
     payload jsonb
   );
+  -- Supabase ships realtime.messages with row level security already on, and
+  -- the table owned by an internal role. The migration therefore only creates
+  -- policies; enabling RLS is the platform's job, so the shim does it here.
+  alter table realtime.messages enable row level security;
   -- Supabase exposes the current channel topic to policies through this.
   create or replace function realtime.topic() returns text language sql stable as $$
     select current_setting('realtime.topic', true)
