@@ -712,6 +712,51 @@ from someone else is not something you should have to go looking for. It stays
 one line in a corner and disappears entirely when no session is running. The
 wake lock behaves identically in follow mode and normal play.
 
+## Deploying
+
+Vercel, Netlify, GitHub Pages or any static host — the app is a static bundle
+with no server of its own. [`vercel.json`](vercel.json) has the build settings
+and cache headers.
+
+**Deploying is a genuine upgrade over local development**, because three
+features are gated on a secure context and simply do not work over plain http
+on a LAN address:
+
+| Feature | Why it needs https |
+| --- | --- |
+| Camera scanning | `getUserMedia` is unavailable outside a secure context |
+| Keeping the screen awake | so is the Screen Wake Lock API |
+| Content hashing | so is `crypto.subtle`, which computes the SHA-256 |
+
+A deployed build fixes all three at once, which is what makes a phone on a
+music stand actually usable.
+
+### Vercel
+
+Import the repo; the Vite preset is detected. Then set two environment
+variables **before the first build** — Vite inlines them at build time, so
+adding them afterwards needs a redeploy:
+
+```
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<publishable key>
+```
+
+Leave them unset for a local-only build: the app still works completely, and
+the Supabase client is not even included in the bundle.
+
+Routing needs no rewrite rule. The app uses hash routes (`#/library`), so every
+URL is `/` as far as the server is concerned.
+
+### After deploying
+
+Add the deployment URL to Supabase under **Authentication → URL Configuration**
+as the Site URL, or email confirmation links will point at the wrong host.
+
+Check that **captcha protection is still off** — see the note in the sync
+section above. It is the one setting that silently breaks students joining, and
+it is tempting to switch on.
+
 ## Backup
 
 **Settings → Backup** exports the whole library as a zip: every PDF, all
