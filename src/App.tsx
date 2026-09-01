@@ -7,12 +7,19 @@ import LibraryView from './components/library/LibraryView';
 import SetlistsView from './components/setlists/SetlistsView';
 import SetlistEditor from './components/setlists/SetlistEditor';
 import SettingsView from './components/settings/SettingsView';
+import EnsemblesView from './components/ensembles/EnsemblesView';
+import { SYNC_ENABLED, isSyncConfigured } from './sync/flags';
 import PerformanceRoute from './components/performance/PerformanceRoute';
 import { cx } from './components/ui/controls';
 
 const TABS: { route: Route; label: string }[] = [
   { route: { name: 'library' }, label: 'Library' },
   { route: { name: 'setlists' }, label: 'Setlists' },
+  // Hidden entirely on a local-only build, so a musician who will never sign in
+  // is not shown a tab that cannot do anything.
+  ...(SYNC_ENABLED && isSyncConfigured()
+    ? [{ route: { name: 'ensembles' } as Route, label: 'Ensembles' }]
+    : []),
   { route: { name: 'settings' }, label: 'Settings' },
 ];
 
@@ -64,6 +71,7 @@ function Chrome({ route, banner }: { route: Route; banner?: string | null }) {
           {route.name === 'library' ? <LibraryView /> : null}
           {route.name === 'setlists' ? <SetlistsView /> : null}
           {route.name === 'setlist' ? <SetlistEditor setlistId={route.id} /> : null}
+          {route.name === 'ensembles' ? <EnsemblesView /> : null}
           {route.name === 'settings' ? <SettingsView /> : null}
         </div>
       </main>

@@ -1,4 +1,11 @@
-import type { CropInsets, FitMode, StrokeLayer } from '../types';
+import type {
+  Assignment,
+  CropInsets,
+  Ensemble,
+  EnsembleMember,
+  FitMode,
+  StrokeLayer,
+} from '../types';
 
 /**
  * Wire shapes.
@@ -11,6 +18,8 @@ import type { CropInsets, FitMode, StrokeLayer } from '../types';
 
 export interface WireStroke {
   id: string;
+  /** Set only on published ensemble markings; absent on personal ones. */
+  ensembleId?: string | null;
   contentHash: string;
   pageNumber: number;
   layer: StrokeLayer;
@@ -62,6 +71,14 @@ export interface PushPayload {
   scorePrefs: WireScorePrefs[];
 }
 
+/** A director's current page, broadcast to whoever is following. */
+export interface PagePosition {
+  contentHash: string;
+  pageNumber: number;
+  /** Shown to members so they know which piece is being called. */
+  title: string;
+}
+
 export interface AuthUser {
   id: string;
   /**
@@ -96,4 +113,43 @@ export interface SyncTransport {
   exportMyData(): Promise<unknown>;
   /** Hard-deletes the user's content. Not a soft flag. */
   deleteMyData(): Promise<void>;
+
+  // --- Ensembles -----------------------------------------------------------
+
+  /**
+   * Signs in with no identifying details at all — the credential is a token
+   * held on the device. This is how a student joins: a display name and
+   * nothing else.
+   */
+  signInAnonymously(displayName: string): Promise<AuthUser>;
+
+  listEnsembles(): Promise<{ ensembles: Ensemble[]; members: EnsembleMember[] }>;
+  createEnsemble(name: string, directorName: string): Promise<Ensemble>;
+  /** Resolves to null for an unknown code, rather than confirming existence. */
+  joinEnsemble(code: string, displayName: string): Promise<string | null>;
+  rotateJoinCode(ensembleId: string): Promise<string>;
+  leaveEnsemble(ensembleId: string): Promise<void>;
+  deleteEnsemble(ensembleId: string): Promise<void>;
+
+  publishEnsembleStrokes(ensembleId: string, strokes: WireStroke[]): Promise<void>;
+  pullEnsembleStrokes(ensembleId: string, since: number): Promise<WireStroke[]>;
+
+  listAssignments(): Promise<Assignment[]>;
+  upsertAssignment(assignment: Assignment): Promise<void>;
+  deleteAssignment(id: string): Promise<void>;
+  setAssignmentDone(id: string, done: boolean): Promise<void>;
+
+  // --- Live page follow ----------------------------------------------------
+
+  /**
+   * Fire-and-forget. Must never be awaited on a page-turn path: the director's
+   * own turn cannot wait for a socket.
+   */
+  broadcastPage(ensembleId: string, position: PagePosition): void;
+  /** Returns an unsubscribe function. */
+  subscribeToPage(
+    ensembleId: string,
+    handler: (position: PagePosition) => void,
+    onConnectionChange?: (connected: boolean) => void,
+  ): () => void;
 }

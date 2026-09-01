@@ -1,7 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './flags';
+import type { Assignment, Ensemble, EnsembleMember } from '../types';
 import type {
   AuthUser,
+  PagePosition,
   PullResult,
   PushPayload,
   SyncTransport,
@@ -278,5 +280,213 @@ export class SupabaseTransport implements SyncTransport {
   async deleteMyData(): Promise<void> {
     const { error } = await this.client.rpc('delete_my_data');
     if (error) throw error;
+  }
+
+  // --- Ensembles -----------------------------------------------------------
+
+  async signInAnonymously(displayName: string): Promise<AuthUser> {
+    // No email, no phone, no third-party identity. The refresh token on this
+    // device is the whole credential, which is the point: a student needs an
+    // account, not an identity.
+    const { data, error } = await this.client.auth.signInAnonymously({
+      options: { data: { [DISPLAY_NAME_KEY]: displayName } },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error('Could not create an account');
+    return this.toAuthUser(data.user);
+  }
+
+  async listEnsembles(): Promise<{ ensembles: Ensemble[]; members: EnsembleMember[] }> {
+    const user = await this.currentUser();
+    if (!user) return { ensembles: [], members: [] };
+
+    const [groups, memberships] = await Promise.all([
+      this.client.from('ensembles').select('*'),
+      this.client.from('ensemble_members').select('*'),
+    ]);
+    if (groups.error) throw groups.error;
+    if (memberships.error) throw memberships.error;
+
+    const members: EnsembleMember[] = (memberships.data ?? []).map((row) => ({
+      ensembleId: row.ensemble_id as string,
+      userId: row.user_id as string,
+      displayName: row.display_name as string,
+      role: row.role as EnsembleMember['role'],
+      joinedAt: Number(row.joined_at),
+    }));
+    const myRole = new Map(
+      members.filter((m) => m.userId === user.id).map((m) => [m.ensembleId, m.role]),
+    );
+
+    const ensembles: Ensemble[] = (groups.data ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      ownerId: row.owner_id as string,
+      // Members are never shown a join code, and RLS means they cannot read one
+      // for a group they do not direct anyway.
+      joinCode: myRole.get(row.id as string) === 'director' ? (row.join_code as string) : undefined,
+      role: myRole.get(row.id as string) ?? 'member',
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    }));
+
+    return { ensembles, members };
+  }
+
+  async createEnsemble(name: string, directorName: string): Promise<Ensemble> {
+    const { data, error } = await this.client.rpc('create_ensemble', {
+      ensemble_name: name,
+      director_name: directorName,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      id: row.id,
+      name: row.name,
+      ownerId: row.owner_id,
+      joinCode: row.join_code,
+      role: 'director',
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async joinEnsemble(code: string, displayName: string): Promise<string | null> {
+    const { data, error } = await this.client.rpc('join_ensemble', {
+      code,
+      display_name: displayName,
+    });
+    if (error) throw error;
+    return (data as string | null) ?? null;
+  }
+
+  async rotateJoinCode(ensembleId: string): Promise<string> {
+    const { data, error } = await this.client.rpc('rotate_join_code', { target: ensembleId });
+    if (error) throw error;
+    return data as string;
+  }
+
+  async leaveEnsemble(ensembleId: string): Promise<void> {
+    const { error } = await this.client.rpc('leave_ensemble', { target: ensembleId });
+    if (error) throw error;
+  }
+
+  async deleteEnsemble(ensembleId: string): Promise<void> {
+    const { error } = await this.client.rpc('delete_ensemble', { target: ensembleId });
+    if (error) throw error;
+  }
+
+  async publishEnsembleStrokes(ensembleId: string, strokes: WireStroke[]): Promise<void> {
+    const user = await this.currentUser();
+    if (!user) throw new Error('Not signed in');
+    if (strokes.length === 0) return;
+    const { error } = await this.client.from('strokes').upsert(
+      strokes.map((s) => ({ ...strokeOut(s, user.id), layer: 'ensemble', ensemble_id: ensembleId })),
+      { onConflict: 'id' },
+    );
+    if (error) throw error;
+  }
+
+  async pullEnsembleStrokes(ensembleId: string, since: number): Promise<WireStroke[]> {
+    const { data, error } = await this.client
+      .from('strokes')
+      .select('*')
+      .eq('ensemble_id', ensembleId)
+      .gte('updated_at', since);
+    if (error) throw error;
+    return ((data ?? []) as StrokeRow[]).map((row) => ({
+      ...strokeIn(row),
+      ensembleId,
+    }));
+  }
+
+  async listAssignments(): Promise<Assignment[]> {
+    const { data, error } = await this.client.from('assignments').select('*');
+    if (error) throw error;
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      ensembleId: row.ensemble_id as string,
+      memberId: row.member_id as string,
+      title: row.title as string,
+      notes: (row.notes as string) ?? '',
+      contentHash: (row.content_hash as string) ?? undefined,
+      pageNumber: row.page_number === null ? undefined : Number(row.page_number),
+      barReference: (row.bar_reference as string) ?? undefined,
+      dueDate: row.due_date === null ? undefined : Number(row.due_date),
+      completedAt: row.completed_at === null ? undefined : Number(row.completed_at),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    }));
+  }
+
+  async upsertAssignment(assignment: Assignment): Promise<void> {
+    const { error } = await this.client.from('assignments').upsert(
+      {
+        id: assignment.id,
+        ensemble_id: assignment.ensembleId,
+        member_id: assignment.memberId,
+        title: assignment.title,
+        notes: assignment.notes,
+        content_hash: assignment.contentHash ?? null,
+        page_number: assignment.pageNumber ?? null,
+        bar_reference: assignment.barReference ?? null,
+        due_date: assignment.dueDate ?? null,
+        completed_at: assignment.completedAt ?? null,
+        created_at: assignment.createdAt,
+        updated_at: assignment.updatedAt,
+      },
+      { onConflict: 'id' },
+    );
+    if (error) throw error;
+  }
+
+  async deleteAssignment(id: string): Promise<void> {
+    const { error } = await this.client.from('assignments').delete().eq('id', id);
+    if (error) throw error;
+  }
+
+  async setAssignmentDone(id: string, done: boolean): Promise<void> {
+    const { error } = await this.client.rpc('set_assignment_done', { target: id, done });
+    if (error) throw error;
+  }
+
+  // --- Live page follow ----------------------------------------------------
+
+  private pageChannels = new Map<string, ReturnType<SupabaseClient['channel']>>();
+
+  private pageChannel(ensembleId: string) {
+    const existing = this.pageChannels.get(ensembleId);
+    if (existing) return existing;
+    const channel = this.client.channel(`ensemble:${ensembleId}:page`, {
+      config: { broadcast: { self: false } },
+    });
+    this.pageChannels.set(ensembleId, channel);
+    return channel;
+  }
+
+  broadcastPage(ensembleId: string, position: PagePosition): void {
+    const channel = this.pageChannel(ensembleId);
+    // Deliberately not awaited. A director's page turn must never wait on a
+    // socket; if the send fails, the turn has still happened locally.
+    void channel.send({ type: 'broadcast', event: 'page', payload: position }).catch(() => undefined);
+  }
+
+  subscribeToPage(
+    ensembleId: string,
+    handler: (position: PagePosition) => void,
+    onConnectionChange?: (connected: boolean) => void,
+  ): () => void {
+    const channel = this.pageChannel(ensembleId);
+    channel.on('broadcast', { event: 'page' }, (message) => {
+      const payload = message.payload as PagePosition | undefined;
+      if (payload && typeof payload.pageNumber === 'number') handler(payload);
+    });
+    channel.subscribe((status) => {
+      onConnectionChange?.(status === 'SUBSCRIBED');
+    });
+    return () => {
+      this.pageChannels.delete(ensembleId);
+      void this.client.removeChannel(channel);
+    };
   }
 }

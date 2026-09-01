@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../db/db';
-import { clearPage, undoLastStroke, usePageStrokes } from '../../db/annotations';
+import { clearPage, undoLastStroke, useEnsembleLayersFor, usePageStrokes } from '../../db/annotations';
+import { useEnsembles } from '../../sync/ensembleClient';
 import { useElementSize, useDevicePixelRatio } from '../../hooks/useElementSize';
 import { useIdleUI } from '../../hooks/useIdleUI';
 import { usePedal } from '../../hooks/usePedal';
@@ -60,6 +61,8 @@ export default function PerformanceView({
   });
   /** Which page undo and clear act on when a spread is showing. */
   const [lastMarkedPage, setLastMarkedPage] = useState<number | null>(null);
+  /** Published layers the reader has switched off for this session. */
+  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
 
   useWakeLock(settings.keepScreenAwake);
   // Nothing may contend with a page turn. Sync resumes on the way out.
@@ -149,7 +152,13 @@ export default function PerformanceView({
   const pagesOnScreen = requests.map((request) => request.pageNumber);
   const markTarget =
     lastMarkedPage !== null && pagesOnScreen.includes(lastMarkedPage) ? lastMarkedPage : page;
-  const markTargetStrokes = usePageStrokes(current?.contentHash, markTarget);
+  const ensembles = useEnsembles();
+  const layersHere = useEnsembleLayersFor(current?.contentHash);
+  const visibleLayers = useMemo(
+    () => new Set(layersHere.filter((id) => !hiddenLayers.has(id))),
+    [layersHere, hiddenLayers],
+  );
+  const markTargetStrokes = usePageStrokes(current?.contentHash, markTarget, visibleLayers);
 
   // Warm the neighbours, including the first page of the next piece so that a
   // setlist transition costs no more than a page turn inside a piece.
@@ -282,6 +291,7 @@ export default function PerformanceView({
               crop={request.crop}
               editing={annotating}
               pen={pen}
+              visibleEnsembles={visibleLayers}
               onStrokeAdded={(page) => {
                 setLastMarkedPage(page);
                 // Debounced: fires 5s after the hand stops, and still only once
@@ -410,6 +420,34 @@ export default function PerformanceView({
             ]}
           />
 
+          {layersHere.map((ensembleId) => {
+            const name = ensembles.find((e) => e.id === ensembleId)?.name ?? 'Ensemble';
+            const shown = !hiddenLayers.has(ensembleId);
+            return (
+              <Button
+                key={ensembleId}
+                size="lg"
+                aria-pressed={shown}
+                onClick={() =>
+                  setHiddenLayers((current_) => {
+                    const next = new Set(current_);
+                    if (next.has(ensembleId)) next.delete(ensembleId);
+                    else next.add(ensembleId);
+                    return next;
+                  })
+                }
+                className={
+                  shown
+                    ? '!border-moss-400 !bg-moss-500 !text-white'
+                    : '!border-ink-500 !bg-ink-800 !text-ink-300'
+                }
+                title={`Show or hide markings published by ${name}`}
+              >
+                {shown ? '● ' : '○ '}
+                {name}
+              </Button>
+            );
+          })}
           <Button
             size="lg"
             onClick={() => {

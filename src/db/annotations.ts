@@ -18,10 +18,19 @@ function byDrawOrder(a: StrokeRecord, b: StrokeRecord): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 
+/**
+ * Strokes for a page.
+ *
+ * `visibleEnsembles` selects which published layers to include; personal
+ * markings are always included. Passing an empty set hides every ensemble
+ * layer, which is what the toggle does.
+ */
 export function usePageStrokes(
   contentHash: string | undefined,
   pageNumber: number,
+  visibleEnsembles?: Set<string>,
 ): StrokeRecord[] {
+  const key = visibleEnsembles ? [...visibleEnsembles].sort().join(',') : '*';
   const rows = useLiveQuery(
     async () => {
       if (!contentHash) return [];
@@ -29,12 +38,50 @@ export function usePageStrokes(
         .where('[contentHash+pageNumber]')
         .equals([contentHash, pageNumber])
         .toArray();
-      return all.filter(isLive).sort(byDrawOrder);
+      return all
+        .filter(isLive)
+        .filter((stroke) => {
+          if (!stroke.ensembleId) return true;
+          return visibleEnsembles ? visibleEnsembles.has(stroke.ensembleId) : true;
+        })
+        // Personal markings draw on top of the director's, so your own notes
+        // are never buried under someone else's.
+        .sort((a, b) => {
+          const aOwn = a.ensembleId ? 1 : 0;
+          const bOwn = b.ensembleId ? 1 : 0;
+          if (aOwn !== bOwn) return bOwn - aOwn;
+          return byDrawOrder(a, b);
+        });
     },
-    [contentHash, pageNumber],
+    [contentHash, pageNumber, key],
     [] as StrokeRecord[],
   );
   return rows;
+}
+
+/** Ensembles that have published markings for this document. */
+export function useEnsembleLayersFor(contentHash: string | undefined): string[] {
+  const rows = useLiveQuery(
+    async () => {
+      if (!contentHash) return [];
+      const all = await db.strokes.where('contentHash').equals(contentHash).toArray();
+      return [
+        ...new Set(
+          all.filter((s) => isLive(s) && s.ensembleId).map((s) => s.ensembleId as string),
+        ),
+      ];
+    },
+    [contentHash],
+    [] as string[],
+  );
+  return rows;
+}
+
+/** Removes every stroke a given ensemble published. Used when leaving a group. */
+export async function removeEnsembleStrokes(ensembleId: string): Promise<number> {
+  const ids = await db.strokes.where('ensembleId').equals(ensembleId).primaryKeys();
+  if (ids.length > 0) await db.strokes.bulkDelete(ids);
+  return ids.length;
 }
 
 /** Content hashes that have any live markings, for badging the library. */
@@ -102,7 +149,10 @@ export async function undoLastStroke(
     .where('[contentHash+pageNumber]')
     .equals([contentHash, pageNumber])
     .toArray();
-  const live = all.filter((row) => isLive(row) && row.layer === layer).sort(byDrawOrder);
+  // Undo only ever touches your own markings, never a published layer.
+  const live = all
+    .filter((row) => isLive(row) && row.layer === layer && !row.ensembleId)
+    .sort(byDrawOrder);
   const last = live[live.length - 1];
   if (!last) return null;
   await deleteStroke(last.id);
@@ -119,7 +169,7 @@ export async function clearPage(
     .where('[contentHash+pageNumber]')
     .equals([contentHash, pageNumber])
     .toArray();
-  const live = all.filter((row) => isLive(row) && row.layer === layer);
+  const live = all.filter((row) => isLive(row) && row.layer === layer && !row.ensembleId);
   for (const stroke of live) await deleteStroke(stroke.id);
   return live.length;
 }

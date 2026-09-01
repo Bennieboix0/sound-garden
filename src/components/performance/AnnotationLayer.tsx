@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { addStroke, usePageStrokes } from '../../db/annotations';
-import type { AnnotationTool, CropInsets, Stroke, StrokeLayer } from '../../types';
+import type { AnnotationTool, CropInsets, Stroke, StrokeLayer, StrokeRecord } from '../../types';
 
 export interface PenSettings {
   tool: AnnotationTool;
@@ -26,6 +26,7 @@ export default function AnnotationLayer({
   editing,
   pen,
   layer = 'personal',
+  visibleEnsembles,
   onStrokeAdded,
 }: {
   /** Markings are keyed to the document's content, not to a local row id. */
@@ -35,10 +36,12 @@ export default function AnnotationLayer({
   editing: boolean;
   pen: PenSettings;
   layer?: StrokeLayer;
+  /** Which published layers to show. Undefined means all of them. */
+  visibleEnsembles?: Set<string>;
   onStrokeAdded?: (pageNumber: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const strokes = usePageStrokes(contentHash, pageNumber);
+  const strokes = usePageStrokes(contentHash, pageNumber, visibleEnsembles);
   const live = useRef<number[] | null>(null);
   /** Set once a stylus is seen, after which touch input is treated as palm. */
   const penSeen = useRef(false);
@@ -60,21 +63,7 @@ export default function AnnotationLayer({
     // relative to the music however the page is cropped or scaled.
     const pageWidthPx = width / visibleWidth;
 
-    const drawStroke = (stroke: Stroke) => {
-      const points = stroke.points;
-      if (points.length < 2) return;
-
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = Math.max(1, stroke.width * pageWidthPx);
-      if (stroke.tool === 'highlighter') {
-        // Multiply keeps the notes legible through the wash of colour.
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.globalAlpha = 0.42;
-      }
-
+    const trace = (points: number[]) => {
       ctx.beginPath();
       for (let i = 0; i < points.length; i += 2) {
         const x = ((points[i] - crop.left) / visibleWidth) * width;
@@ -89,11 +78,43 @@ export default function AnnotationLayer({
           ((points[1] - crop.top) / visibleHeight) * height,
         );
       }
+    };
+
+    const drawStroke = (stroke: Stroke, published = false) => {
+      const points = stroke.points;
+      if (points.length < 2) return;
+      const lineWidth = Math.max(1, stroke.width * pageWidthPx);
+
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (published && stroke.tool !== 'highlighter') {
+        // A published marking gets a pale keyline underneath it. It reads
+        // instantly as "not mine" from a metre away, and unlike dimming or
+        // dashing it costs nothing in legibility — which matters, because
+        // these are the markings the director actually wants followed.
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = lineWidth + Math.max(2, lineWidth * 0.9);
+        trace(points);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = lineWidth;
+      if (stroke.tool === 'highlighter') {
+        // Multiply keeps the notes legible through the wash of colour.
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.globalAlpha = published ? 0.3 : 0.42;
+      }
+      trace(points);
       ctx.stroke();
       ctx.restore();
     };
 
-    for (const stroke of strokes) drawStroke(stroke);
+    for (const stroke of strokes) {
+      drawStroke(stroke, Boolean((stroke as StrokeRecord).ensembleId));
+    }
     if (live.current && live.current.length >= 2) {
       drawStroke({ ...pen, points: live.current });
     }

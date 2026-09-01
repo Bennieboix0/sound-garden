@@ -3,6 +3,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 export type Route =
   | { name: 'library' }
   | { name: 'setlists' }
+  | { name: 'ensembles' }
   | { name: 'setlist'; id: string }
   | { name: 'settings' }
   /** Playing one score on its own. */
@@ -16,6 +17,8 @@ export function hrefFor(route: Route): string {
       return '#/library';
     case 'setlists':
       return '#/setlists';
+    case 'ensembles':
+      return '#/ensembles';
     case 'setlist':
       return `#/setlists/${encodeURIComponent(route.id)}`;
     case 'settings':
@@ -36,6 +39,8 @@ export function parseHash(hash: string): Route {
   switch (parts[0]) {
     case 'setlists':
       return parts[1] ? { name: 'setlist', id: parts[1] } : { name: 'setlists' };
+    case 'ensembles':
+      return { name: 'ensembles' };
     case 'settings':
       return { name: 'settings' };
     case 'play':

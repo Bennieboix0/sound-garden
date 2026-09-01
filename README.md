@@ -540,6 +540,88 @@ Two suites, both offline (`npm test`):
 Verified: with credentials configured the bundle is 985 kB and contains the
 Supabase client; with the flag off it is 756 kB and contains no trace of it.
 
+## Ensembles (Phase 2)
+
+A director publishes markings and setlists to a group. Members receive them,
+can never edit them, and keep their own markings private.
+
+### This is used by children, so the schema is the privacy boundary
+
+Every rule below is enforced by Postgres row level security in
+[`supabase/migrations/0002_ensembles.sql`](supabase/migrations/0002_ensembles.sql),
+not by the interface. A bug in the UI cannot leak anything the policies forbid.
+
+- **A member is a display name.** Students sign in *anonymously* — the
+  credential is a refresh token on the device — and pick a name. No email, no
+  real name, no date of birth, no phone number, no photo, no bio.
+- **There is no messaging table, and there will not be one.** Directors
+  communicate through assignments, which are addressed to one person and are
+  about a passage of music. A test asserts no chat-shaped table exists.
+- **No analytics, telemetry, crash reporting or third-party SDKs.** None were
+  added anywhere in this work.
+- **A director cannot see a member's personal annotation layer**, email, IP,
+  device identifier or login times. Membership rows carry a display name, a
+  role and a join time, and a test asserts no column matching
+  email/phone/ip/device/last-seen exists.
+- **A student cannot enumerate their classmates.** Members see only their own
+  membership row; directors see the roster. Nothing in the app needs more.
+- **Leaving and deleting really delete.** No soft flags anywhere in the file.
+
+### Why join codes are not readable
+
+There is deliberately **no policy allowing an ensemble to be selected by its
+join code**. If there were, anyone could grind codes against the table and walk
+into a school's group. Joining goes through `join_ensemble()`, a
+`SECURITY DEFINER` function that is the only path which reads a code, and which
+returns *nothing* for a bad one rather than an error distinguishing "no such
+group" — so it cannot be used as an oracle either.
+
+Codes are six characters from an alphabet with no `0`/`O` or `1`/`I`/`L`,
+because they get read aloud off a whiteboard. Directors can rotate a code at
+any time.
+
+### The design fix that came first
+
+Phase 0 gave strokes `layer: 'personal' | 'ensemble'` and no more. That is not
+enough, and it was worth fixing before building on it: a student in orchestra
+*and* jazz band would have had both directors' markings collapsed into one
+undifferentiated overlay, with no way to toggle them apart and no way to clean
+up when they left one group.
+
+Strokes now carry an `ensembleId`, so each published layer is independently
+visible, independently toggleable, and removed exactly when its group is left.
+A database constraint enforces that a stroke is either personal *or* published
+to exactly one ensemble, never ambiguously both.
+
+### How a published layer looks
+
+A director's markings are drawn beneath a pale keyline, so they read instantly
+as "not mine" from a metre away. Dimming or dashing them would have been easier
+and worse — these are the markings the director actually wants followed, so
+they cannot cost anything in legibility.
+
+Personal markings always draw **on top** of published ones, so your own notes
+are never buried under someone else's. Each group gets its own toggle in the
+performance toolbar.
+
+### Live page follow
+
+`usePageFollow` subscribes a member's device to the director's current page over
+Supabase Realtime. Two rules shape it:
+
+- **The pedal always wins.** Any local page turn drops the device out of follow
+  mode until the musician asks to rejoin. A reader who is lost needs to find
+  their own place more than they need to agree with the director, and a device
+  that fights the person holding it is worse than one that is briefly out of
+  step.
+- **A dropped connection is not an error.** It shows as "not following" and
+  changes nothing else; manual turns work exactly as always.
+
+This is the one part of sync allowed to run during the performance view,
+because it is a fire-and-forget broadcast of two numbers rather than a data
+sync. The send is never awaited: a director's own page turn cannot wait on a
+socket.
+
 ## Backup
 
 **Settings → Backup** exports the whole library as a zip: every PDF, all

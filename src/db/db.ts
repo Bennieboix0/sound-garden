@@ -1,5 +1,8 @@
 import Dexie, { type Table } from 'dexie';
 import type {
+  Assignment,
+  Ensemble,
+  EnsembleMember,
   PageAnnotation,
   Score,
   ScoreFile,
@@ -45,6 +48,9 @@ export class SoundGardenDB extends Dexie {
   annotations!: Table<PageAnnotation, string>;
   strokes!: Table<StrokeRecord, string>;
   syncQueue!: Table<SyncQueueEntry, number>;
+  ensembles!: Table<Ensemble, string>;
+  ensembleMembers!: Table<EnsembleMember, [string, string]>;
+  assignments!: Table<Assignment, string>;
 
   constructor() {
     super('sound-garden');
@@ -111,6 +117,16 @@ export class SoundGardenDB extends Dexie {
 
     // Dropped separately from v3 so the upgrade above can still read it.
     this.version(4).stores({ annotations: null });
+
+    // v5 adds ensembles, and scopes ensemble strokes to the group that
+    // published them. Existing strokes are all personal, so there is nothing to
+    // migrate — only the new index to build.
+    this.version(5).stores({
+      strokes: 'id, contentHash, [contentHash+pageNumber], updatedAt, deletedAt, ensembleId',
+      ensembles: 'id, ownerId, updatedAt',
+      ensembleMembers: '[ensembleId+userId], ensembleId, userId',
+      assignments: 'id, ensembleId, memberId, dueDate, updatedAt',
+    });
   }
 }
 

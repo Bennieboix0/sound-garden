@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react';
 import { syncClient, type SyncStatus } from './client';
 import { isSyncConfigured } from './flags';
 import { SupabaseTransport } from './supabaseTransport';
+import type { SyncTransport } from './transport';
 
 let initialised = false;
+let activeTransport: SyncTransport | null = null;
+
+/** The live transport, or null when sync is compiled out or unconfigured. */
+export function getTransport(): SyncTransport | null {
+  return activeTransport;
+}
 
 /**
  * Boots the sync client once per page load and exposes its status.
@@ -28,6 +35,7 @@ export function useSyncStatus(): SyncStatus {
             }
           })()
         : null;
+      activeTransport = transport;
       void syncClient.init(transport);
     }
     return syncClient.subscribe(setStatus);

@@ -149,6 +149,17 @@ export type StrokeLayer = 'personal' | 'ensemble';
 export interface StrokeRecord extends Stroke {
   /** Client-generated uuid. Stable across devices. */
   id: string;
+  /**
+   * Which ensemble published this stroke; absent for personal markings.
+   *
+   * `layer` alone is not enough. A student can belong to more than one group,
+   * and without this their orchestra director's markings and their jazz band
+   * director's markings collapse into one undifferentiated overlay that cannot
+   * be toggled apart or cleaned up when they leave one of them.
+   *
+   * Absent rather than null so the index contains exactly the ensemble rows.
+   */
+  ensembleId?: string;
   /** Identifies the *document*, not the local score row. */
   contentHash: string;
   pageNumber: number;
@@ -171,6 +182,51 @@ export interface StrokeRecord extends Stroke {
 
 /** What a queued change refers to. */
 export type SyncEntity = 'stroke' | 'setlist' | 'scorePrefs';
+
+export type EnsembleRole = 'director' | 'member';
+
+export interface Ensemble {
+  id: string;
+  name: string;
+  ownerId: string;
+  /** Only a director ever holds this; members never receive it. */
+  joinCode?: string;
+  role: EnsembleRole;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A person in an ensemble, as far as anyone else is allowed to know.
+ *
+ * Display name and role, and nothing else. No email, no device identifier, no
+ * last-seen time. This shape is the privacy boundary, so it is deliberately
+ * hard to add to.
+ */
+export interface EnsembleMember {
+  ensembleId: string;
+  userId: string;
+  displayName: string;
+  role: EnsembleRole;
+  joinedAt: number;
+}
+
+export interface Assignment {
+  id: string;
+  ensembleId: string;
+  /** Who it is for. Directors address individuals, never groups. */
+  memberId: string;
+  title: string;
+  notes: string;
+  /** Optional pointer at a specific place in a specific score. */
+  contentHash?: string;
+  pageNumber?: number;
+  barReference?: string;
+  dueDate?: number;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
 
 /**
  * A local change waiting to be pushed. Holds only a reference: the drain reads
