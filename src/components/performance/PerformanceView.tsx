@@ -341,24 +341,32 @@ export default function PerformanceView({
       </div>
 
       {/* Tap zones sit under the chrome but over the score. Suppressed while
-          annotating, where a tap is a pen stroke rather than a page turn. */}
+          annotating, where a tap is a pen stroke rather than a page turn.
+
+          Deliberately not focusable. They are a pointer affordance only — the
+          same actions are on the toolbar and on the pedal — and a focus ring
+          on a full-height third of the screen draws two bright vertical lines
+          straight down the middle of the music. */}
       <div className={cx('absolute inset-0 z-10 flex', annotating && 'hidden')}>
         <button
           type="button"
           aria-label="Previous page"
-          className="h-full w-1/3 cursor-w-resize focus:outline-none"
+          tabIndex={-1}
+          className="h-full w-1/3 cursor-w-resize focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           onClick={() => handleZoneTap('left')}
         />
         <button
           type="button"
           aria-label="Show or hide controls"
-          className="h-full w-1/3 focus:outline-none"
+          tabIndex={-1}
+          className="h-full w-1/3 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           onClick={() => handleZoneTap('middle')}
         />
         <button
           type="button"
           aria-label="Next page"
-          className="h-full w-1/3 cursor-e-resize focus:outline-none"
+          tabIndex={-1}
+          className="h-full w-1/3 cursor-e-resize focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           onClick={() => handleZoneTap('right')}
         />
       </div>
@@ -388,6 +396,7 @@ export default function PerformanceView({
 
       {/* Chrome. Overlaid, so showing it never reflows or re-renders the score. */}
       <div
+        data-performance-chrome=""
         className={cx(
           'pointer-events-none absolute inset-0 z-20 flex flex-col justify-between transition-opacity duration-200',
           ui.visible ? 'opacity-100' : 'opacity-0',

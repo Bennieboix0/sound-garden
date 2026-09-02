@@ -203,6 +203,15 @@ first time you open it, and it is always reversible from the crop tool's
 - **Auto-hide ignores page turns.** `useIdleUI` treats mouse movement as
   activity but deliberately *not* pedal presses — the toolbar popping up over
   the score on every turn would be intolerable mid-song.
+- **Revealing the controls takes deliberate movement**: 60px of continuous
+  travel, not any movement at all, and nothing for 1.2s after the controls were
+  dismissed on purpose. Dismissing is usually a click, and taking a hand off a
+  mouse almost always nudges it — which reopened the toolbar on the very
+  gesture meant to close it. Movement also stops accumulating after a 350ms
+  pause, so slow drift never adds up to a reveal over a whole piece.
+- **The tap zones are not focusable.** They are a pointer affordance only, and
+  the focus ring — deliberately large and high-contrast for stage use — drew
+  two bright vertical lines down the middle of the score when one took focus.
 - **Touch is handled by tap zones, not pointer events**, because every tap
   emits a `pointermove` that would otherwise reveal the toolbar.
 - **A screen wake lock is held** while a score is open, so the display never
