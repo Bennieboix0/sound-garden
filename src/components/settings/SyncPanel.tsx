@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { syncClient } from '../../sync/client';
+import { describeError } from '../../sync/ensembleClient';
 import { SYNC_ENABLED, isSyncConfigured } from '../../sync/flags';
 import { useSyncStatus } from '../../sync/useSync';
 import { Button, Field, Spinner, TextField, cx } from '../ui/controls';
@@ -27,18 +28,67 @@ export default function SyncPanel() {
 
   if (!SYNC_ENABLED) return null;
 
+  /** Set when the account exists but cannot be signed into yet. */
+  const [recovery, setRecovery] = useState<'confirm' | 'password' | null>(null);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
+    setRecovery(null);
     try {
       if (mode === 'up') await syncClient.signUp(email, password, displayName.trim());
       else await syncClient.signIn(email, password);
       setEmail('');
       setPassword('');
-      setPassword('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in.');
+      const code = (err as { code?: string } | null)?.code ?? '';
+      const message = describeError(err);
+
+      // "User already registered" while signing up is not really an error — the
+      // account is there, they just want the other form. Sending them to it
+      // with the email kept avoids the dead end of being unable to sign up and
+      // not realising sign-in is the way through.
+      if (code === 'user_already_exists' || /already registered/i.test(message)) {
+        setMode('in');
+        setPassword('');
+        setNotice(
+          'That email already has an account. Sign in below — and use “Forgot your password?” if you cannot remember it.',
+        );
+        setRecovery('password');
+      } else if (code === 'email_not_confirmed' || /not confirmed/i.test(message)) {
+        setError('This account has not been confirmed yet. Check your email for the link.');
+        setRecovery('confirm');
+      } else if (/invalid login credentials/i.test(message)) {
+        setError('That email and password do not match an account.');
+        setRecovery('password');
+      } else {
+        setError(message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runRecovery = async () => {
+    if (!email.trim()) {
+      setError('Enter your email address first.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (recovery === 'confirm') {
+        await syncClient.resendConfirmation(email.trim());
+        setNotice('Confirmation email sent. Follow the link, then sign in.');
+      } else {
+        await syncClient.sendPasswordReset(email.trim());
+        setNotice('Password reset email sent. Follow the link to choose a new one.');
+      }
+      setRecovery(null);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -165,9 +215,32 @@ export default function SyncPanel() {
               required
             />
           </Field>
-          <Button type="submit" size="lg" variant="primary" disabled={busy} className="w-fit">
-            {busy ? <Spinner /> : mode === 'up' ? 'Create account' : 'Sign in'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" size="lg" variant="primary" disabled={busy} className="w-fit">
+              {busy ? <Spinner /> : mode === 'up' ? 'Create account' : 'Sign in'}
+            </Button>
+            {/* A way out of the two states that otherwise strand you: an account
+                that exists but whose password you have lost, and one that was
+                never confirmed. */}
+            {mode === 'in' ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRecovery('password');
+                  void runRecovery();
+                }}
+                className="min-h-touch text-base font-semibold underline decoration-dotted underline-offset-4 disabled:opacity-50"
+              >
+                Forgot your password?
+              </button>
+            ) : null}
+            {recovery === 'confirm' ? (
+              <Button size="lg" disabled={busy} onClick={() => void runRecovery()}>
+                Resend confirmation email
+              </Button>
+            ) : null}
+          </div>
         </form>
       )}
 

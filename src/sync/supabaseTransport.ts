@@ -116,6 +116,29 @@ function prefsIn(row: ScorePrefsRow): WireScorePrefs {
 
 const DISPLAY_NAME_KEY = 'display_name';
 
+/**
+ * Turns a Supabase rejection into a real Error.
+ *
+ * supabase-js rejects with plain objects that are not Error instances, so every
+ * `err instanceof Error` check upstream silently dropped the message and showed
+ * a generic failure instead. Normalising here fixes all of them at once.
+ *
+ * The `code` is preserved on the thrown Error so callers can branch on a stable
+ * identifier rather than matching English prose.
+ */
+function asError(error: unknown, fallback: string): Error {
+  const source = error as { message?: unknown; code?: unknown; status?: unknown } | null;
+  const message = typeof source?.message === 'string' && source.message ? source.message : fallback;
+  const wrapped = new Error(message) as Error & { code?: string; status?: number };
+  if (typeof source?.code === 'string') wrapped.code = source.code;
+  if (typeof source?.status === 'number') wrapped.status = source.status;
+  return wrapped;
+}
+
+/** Stable identifiers for the two states that strand someone at the sign-in form. */
+export const AUTH_ALREADY_REGISTERED = 'user_already_exists';
+export const AUTH_NOT_CONFIRMED = 'email_not_confirmed';
+
 export class SupabaseTransport implements SyncTransport {
   readonly name = 'supabase';
   private client: SupabaseClient;
@@ -177,7 +200,7 @@ export class SupabaseTransport implements SyncTransport {
       password,
       options: { data: { [DISPLAY_NAME_KEY]: displayName } },
     });
-    if (error) throw error;
+    if (error) throw asError(error, 'Could not create the account.');
     if (!data.user) throw new Error('Check your email to confirm the account, then sign in.');
 
     // With email confirmation switched on — the default — sign-up returns a
@@ -203,14 +226,28 @@ export class SupabaseTransport implements SyncTransport {
 
   async signIn(email: string, password: string): Promise<AuthUser> {
     const { data, error } = await this.client.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) throw asError(error, 'Could not sign in.');
     if (!data.user) throw new Error('Sign-in failed');
     return this.toAuthUser(data.user);
   }
 
   async signOut(): Promise<void> {
     const { error } = await this.client.auth.signOut();
-    if (error) throw error;
+    if (error) throw asError(error, 'Could not sign out.');
+  }
+
+  /** Sends the confirmation link again, for an account stuck unconfirmed. */
+  async resendConfirmation(email: string): Promise<void> {
+    const { error } = await this.client.auth.resend({ type: 'signup', email });
+    if (error) throw asError(error, 'Could not resend the confirmation email.');
+  }
+
+  /** Emails a password reset link, for the far more common "forgot it" case. */
+  async sendPasswordReset(email: string): Promise<void> {
+    const { error } = await this.client.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    if (error) throw asError(error, 'Could not send the reset email.');
   }
 
   async pull(since: number): Promise<PullResult> {
@@ -321,7 +358,7 @@ export class SupabaseTransport implements SyncTransport {
     const { data, error } = await this.client.auth.signInAnonymously({
       options: { data: { [DISPLAY_NAME_KEY]: displayName } },
     });
-    if (error) throw error;
+    if (error) throw asError(error, 'Could not create a member account.');
     if (!data.user) throw new Error('Could not create an account');
     return this.toAuthUser(data.user);
   }

@@ -150,6 +150,16 @@ export class SyncClient {
     await this.sync('sign-up');
   }
 
+  async resendConfirmation(email: string): Promise<void> {
+    if (!this.transport) throw new Error('Sync is not configured');
+    await this.transport.resendConfirmation(email);
+  }
+
+  async sendPasswordReset(email: string): Promise<void> {
+    if (!this.transport) throw new Error('Sync is not configured');
+    await this.transport.sendPasswordReset(email);
+  }
+
   async signOut(): Promise<void> {
     if (!this.transport) return;
     await this.transport.signOut();

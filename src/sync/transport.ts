@@ -100,6 +100,10 @@ export interface SyncTransport {
   signUp(email: string, password: string, displayName: string): Promise<AuthUser>;
   signIn(email: string, password: string): Promise<AuthUser>;
   signOut(): Promise<void>;
+  /** Re-sends the confirmation link for an account stuck unconfirmed. */
+  resendConfirmation(email: string): Promise<void>;
+  /** Emails a password reset link. */
+  sendPasswordReset(email: string): Promise<void>;
 
   /** Everything changed at or after `since`. */
   pull(since: number): Promise<PullResult>;
