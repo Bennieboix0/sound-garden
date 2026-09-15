@@ -8,6 +8,29 @@ import { getTransport } from './useSync';
 import type { Assignment, Ensemble, EnsembleMember, StrokeRecord } from '../types';
 
 /**
+ * Pulls a readable message out of whatever was thrown.
+ *
+ * Supabase rejects with plain objects — PostgrestError, AuthError — not with
+ * Error instances, so an `instanceof Error` check silently discarded every
+ * useful message and replaced it with a generic failure. That turned a precise
+ * server explanation ("not signed in", "Email not confirmed") into "that did
+ * not work", which is worse than no message at all.
+ */
+export function describeError(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err) return err;
+  if (err && typeof err === 'object') {
+    const e = err as { message?: unknown; error_description?: unknown; hint?: unknown; details?: unknown; code?: unknown };
+    for (const field of [e.message, e.error_description, e.details, e.hint]) {
+      if (typeof field === 'string' && field) {
+        return e.code ? `${field} (${String(e.code)})` : field;
+      }
+    }
+  }
+  return 'Something went wrong, and the server gave no reason.';
+}
+
+/**
  * Derives a stable id for a published copy of a stroke.
  *
  * Publishing used to mint a fresh uuid every time, which meant a director who
@@ -146,7 +169,7 @@ export function useEnsembleActions(): EnsembleActions {
     try {
       await run;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reach the server.');
+      setError(describeError(err));
     } finally {
       inFlightRefresh = null;
       setRefreshing(false);
@@ -164,7 +187,7 @@ export function useEnsembleActions(): EnsembleActions {
         await fn();
         await refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'That did not work.');
+        setError(describeError(err));
         throw err;
       }
     },
@@ -212,7 +235,7 @@ export function useEnsembleActions(): EnsembleActions {
         return true;
       } catch (err) {
         console.error('[sound-garden] join failed', err);
-        const message = err instanceof Error ? err.message : String(err);
+        const message = describeError(err);
         setError(
           /anonymous|signup|disabled/i.test(message)
             ? 'This server is not accepting new member accounts. Ask your director to enable anonymous sign-in.'

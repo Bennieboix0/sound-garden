@@ -364,12 +364,21 @@ export class SupabaseTransport implements SyncTransport {
   }
 
   async createEnsemble(name: string, directorName: string): Promise<Ensemble> {
+    // Fail early and clearly rather than letting the server say "not signed in":
+    // an unconfirmed email account has a user but no usable session.
+    const signedIn = await this.currentUser();
+    if (!signedIn) {
+      throw new Error(
+        'You need to be signed in to start a group. If you have just signed up, confirm the link in your email first.',
+      );
+    }
     const { data, error } = await this.client.rpc('create_ensemble', {
       ensemble_name: name,
       director_name: directorName,
     });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? 'Could not create the group.');
     const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.id) throw new Error('The server did not return the new group.');
     return {
       id: row.id,
       name: row.name,

@@ -368,14 +368,26 @@ export default function EnsemblesView() {
         </p>
       ) : null}
 
-      {!signedIn ? (
+      {/* Both forms are always available.
+          Joining used to be offered only while signed out, which had two bad
+          consequences: a student who mistyped their code was signed in by the
+          attempt and then had no form left to try again with, and nobody could
+          ever join a second group — despite the whole layer model being built
+          so a student can be in orchestra and jazz band at once. */}
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <form
-          className="mt-5 flex max-w-lg flex-col gap-4 rounded-2xl border-2 border-ink-300 p-5 dark:border-ink-700"
+          className="flex flex-col gap-4 rounded-2xl border-2 border-ink-300 p-5 dark:border-ink-700"
           onSubmit={(event) => {
             event.preventDefault();
             setBusy(true);
             void actions
               .joinEnsemble(joinCode, displayName)
+              .then((joined) => {
+                if (joined) {
+                  setJoinCode('');
+                  setDisplayName('');
+                }
+              })
               .finally(() => setBusy(false));
           }}
         >
@@ -404,41 +416,51 @@ export default function EnsemblesView() {
             type="submit"
             size="lg"
             variant="primary"
-            disabled={busy || joinCode.length < 6 || !displayName.trim()}
+            disabled={busy || joinCode.trim().length < 6 || !displayName.trim()}
             className="w-fit"
           >
             Join
           </Button>
-          <p className="text-sm text-ink-600 dark:text-ink-300">
-            Directing a group instead? Sign in from Settings first.
-          </p>
         </form>
-      ) : (
+
         <form
-          className="mt-5 flex max-w-lg flex-wrap items-end gap-3"
+          className="flex flex-col gap-4 rounded-2xl border-2 border-ink-300 p-5 dark:border-ink-700"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!signedIn) return;
             setBusy(true);
             void actions
               .createEnsemble(newName.trim(), status.user?.displayName ?? 'Director')
               .then(() => setNewName(''))
+              .catch(() => undefined)
               .finally(() => setBusy(false));
           }}
         >
-          <div className="min-w-[14rem] flex-1">
-            <Field label="Start a group">
-              <TextField
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="School Orchestra"
-              />
-            </Field>
-          </div>
-          <Button type="submit" size="lg" variant="primary" disabled={busy || !newName.trim()}>
+          <h2 className="text-xl font-bold">Start a group</h2>
+          <p className="text-base text-ink-700 dark:text-ink-200">
+            {signedIn
+              ? 'You will get a six-character code to read out to your players.'
+              : 'Directing a group needs an account, so your groups follow you between devices. Sign in from Settings.'}
+          </p>
+          <Field label="Group name">
+            <TextField
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="School Orchestra"
+              disabled={!signedIn}
+            />
+          </Field>
+          <Button
+            type="submit"
+            size="lg"
+            variant="primary"
+            disabled={busy || !signedIn || !newName.trim()}
+            className="w-fit"
+          >
             Create
           </Button>
         </form>
-      )}
+      </div>
 
       {sorted.length === 0 ? (
         <EmptyState
