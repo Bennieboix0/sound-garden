@@ -1,6 +1,6 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../db/db';
+import { db, getSettings, saveSettings } from '../../db/db';
 import { hrefFor, silentReplace, type Route } from '../../state/router';
 import type { Score } from '../../types';
 import { Button, Spinner } from '../ui/controls';
@@ -31,6 +31,17 @@ export default function PerformanceRoute({ route }: { route: PlayRoute }) {
     },
     [key],
   );
+
+  // Counted here rather than in the view, which remounts on every score change
+  // within a setlist. One count per time the player is entered.
+  const counted = useRef(false);
+  useEffect(() => {
+    if (counted.current) return;
+    counted.current = true;
+    void getSettings().then((current) =>
+      saveSettings({ scoresOpened: (current.scoresOpened ?? 0) + 1 }),
+    );
+  }, []);
 
   const exitHref =
     route.name === 'perform' && setlistId

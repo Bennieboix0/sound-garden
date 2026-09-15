@@ -528,6 +528,23 @@ they are properties of how a document reads, not of the hardware.
 
 Thumbnails do not sync either; they are regenerated locally from the file.
 
+### Signing in
+
+The session is kept in `localStorage` under `sound-garden-auth` and restored on
+load, so signing in once lasts across reloads and across sessions.
+
+Restoration deliberately uses `getSession()` rather than `getUser()`. The
+difference is that `getUser()` makes a network round trip to validate the token,
+which in an offline-first app is the wrong trade: a rehearsal room with no
+signal would report the user as signed out on every reload, even with a
+perfectly good session sitting in storage. A stale token is corrected by the
+background refresh instead.
+
+**Students never sign in explicitly.** Joining a group signs the device in
+anonymously first — a display name and a token held on the device, no email and
+no password — and only then calls `join_ensemble`, which refuses a caller with
+no `auth.uid()`.
+
 ### Testing
 
 `npm test` runs everything that needs no backend. `npm run test:live` adds

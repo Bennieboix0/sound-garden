@@ -131,14 +131,40 @@ export function useEnsembleActions(): EnsembleActions {
     joinEnsemble: async (code, displayName) => {
       setError(null);
       const transport = getTransport();
-      if (!transport) throw new Error('Sync is not configured');
-      const id = await transport.joinEnsemble(code.trim().toUpperCase(), displayName.trim());
-      if (!id) {
-        setError('That code did not match a group. Check it with your director.');
+      if (!transport) {
+        setError('This build has no sync server configured.');
         return false;
       }
-      await refresh();
-      return true;
+
+      const name = displayName.trim();
+      const tidyCode = code.trim().toUpperCase();
+
+      try {
+        // A student joining for the first time has no account at all, and
+        // join_ensemble refuses an anonymous caller — auth.uid() would be null.
+        // Sign in first, with the display name and nothing else: no email, no
+        // password, just a token held on this device.
+        if (!(await transport.currentUser())) {
+          await transport.signInAnonymously(name);
+        }
+
+        const id = await transport.joinEnsemble(tidyCode, name);
+        if (!id) {
+          setError('That code did not match a group. Check it with your director.');
+          return false;
+        }
+        await refresh();
+        return true;
+      } catch (err) {
+        console.error('[sound-garden] join failed', err);
+        const message = err instanceof Error ? err.message : String(err);
+        setError(
+          /anonymous|signup|disabled/i.test(message)
+            ? 'This server is not accepting new member accounts. Ask your director to enable anonymous sign-in.'
+            : `Could not join: ${message}`,
+        );
+        return false;
+      }
     },
 
     rotateCode: (ensembleId) =>

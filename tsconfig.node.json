@@ -16,6 +16,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
 
+    // vite.config.ts reads package.json and shells out for the commit hash.
+    "types": ["node"],
+
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts"]

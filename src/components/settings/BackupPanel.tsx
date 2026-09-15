@@ -6,6 +6,7 @@ import {
   type BackupProgress,
   type RestoreMode,
 } from '../../db/backup';
+import { saveSettings } from '../../db/db';
 import { Button, Spinner } from '../ui/controls';
 import { ConfirmDialog } from '../ui/Modal';
 
@@ -32,6 +33,7 @@ export default function BackupPanel() {
       link.remove();
       // Give the browser a moment to start the download before revoking.
       window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      await saveSettings({ lastBackupAt: Date.now() });
       setMessage(`Backup saved (${(blob.size / (1024 * 1024)).toFixed(1)} MB).`);
     } catch (err) {
       console.error('[sound-garden] export failed', err);

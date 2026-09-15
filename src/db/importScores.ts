@@ -1,5 +1,6 @@
 import { db, newId } from './db';
 import { provisionalHash, sha256 } from './contentHash';
+import { ensurePersistenceAfterFirstImport } from '../pwa/storage';
 import { detectCrop, renderThumbnail } from '../pdf/analyze';
 import { loadDocumentFromData } from '../pdf/pdfjs';
 import type { CropInsets, Score } from '../types';
@@ -128,6 +129,10 @@ export async function importPdf(
       await db.files.put({ id: score.id, blob: file });
       if (thumbnail) await db.thumbs.put({ id: score.id, dataUrl: thumbnail });
     });
+
+    // Browsers weigh a persistence request against how invested the user looks,
+    // so ask once there is actually a library to protect rather than on launch.
+    void ensurePersistenceAfterFirstImport().catch(() => undefined);
 
     return score;
   } finally {

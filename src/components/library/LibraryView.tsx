@@ -16,6 +16,7 @@ import ScoreCard from './ScoreCard';
 import ScoreRow from './ScoreRow';
 import ScannerView from '../scan/ScannerView';
 import SyncIndicator from './SyncIndicator';
+import LibraryNotices from './LibraryNotices';
 import { filterAndSort, useScores, useTagCounts, useThumbnails, type SortKey } from './useLibrary';
 
 const LAYOUT_KEY = 'sound-garden:layout';
@@ -170,6 +171,8 @@ export default function LibraryView() {
           Import PDFs
         </Button>
       </div>
+
+      <LibraryNotices />
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <div className="min-w-[14rem] flex-1">

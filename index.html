@@ -6,13 +6,34 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
-    <meta name="theme-color" content="#0b0d0c" />
-    <meta name="description" content="Sheet music reader for working musicians. Offline, local-first, foot-pedal driven." />
+
+    <!--
+      Two theme colours so the browser chrome matches before any JavaScript
+      runs. Once the app knows the user's own dark-mode setting (which is
+      independent of the OS preference) it overwrites both — see
+      SettingsProvider. Values are ink-900 and ink-100 from tailwind.config.js.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef1ef" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d0c" />
+
+    <meta
+      name="description"
+      content="Sheet music reader for working musicians. Offline, local-first, foot-pedal driven."
+    />
+
+    <!-- iOS ignores the web app manifest entirely, so it needs its own tags. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Sound Garden" />
+    <!-- black-translucent lets the score run under the status bar; the safe
+         area insets in index.css keep the controls clear of it. -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!-- iOS uses only this one, and only at 180x180. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
     <title>Sound Garden</title>
   </head>
   <body>

@@ -7,6 +7,7 @@ import { SegmentedControl, Toggle } from '../ui/controls';
 import BackupPanel from './BackupPanel';
 import PedalSettings from './PedalSettings';
 import SyncPanel from './SyncPanel';
+import InstallPanel from './InstallPanel';
 
 function DisplaySettings() {
   const { settings, update } = useSettings();
@@ -131,6 +132,7 @@ export default function SettingsView() {
       <PedalSettings />
       <DisplaySettings />
       <BackupPanel />
+      <InstallPanel />
       <SyncPanel />
       <StorageSummary />
     </div>

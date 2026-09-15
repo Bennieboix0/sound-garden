@@ -125,7 +125,13 @@ export class SupabaseTransport implements SyncTransport {
       throw new Error('Supabase is not configured for this build');
     }
     this.client = createClient(url, anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: {
+        // The session lives in localStorage and is restored on load, so signing
+        // in once is enough — across reloads and across sessions.
+        persistSession: true,
+        autoRefreshToken: true,
+        storageKey: 'sound-garden-auth',
+      },
       // No analytics, no telemetry, no third-party SDKs — here or anywhere else
       // in this app. See the README's data minimisation section.
       global: { headers: { 'x-application-name': 'sound-garden' } },
@@ -147,8 +153,15 @@ export class SupabaseTransport implements SyncTransport {
   }
 
   async currentUser(): Promise<AuthUser | null> {
-    const { data } = await this.client.auth.getUser();
-    return data.user ? this.toAuthUser(data.user) : null;
+    // getSession reads the stored session locally; getUser would make a network
+    // round trip to validate it. That difference matters here: this app is
+    // offline-first, and a rehearsal room with no signal was reporting the user
+    // as signed out on every reload even though a perfectly good session was
+    // sitting in localStorage. A stale token is corrected by the refresh that
+    // supabase-js runs in the background, and by onAuthChange.
+    const { data, error } = await this.client.auth.getSession();
+    if (error) return null;
+    return data.session?.user ? this.toAuthUser(data.session.user) : null;
   }
 
   onAuthChange(listener: (user: AuthUser | null) => void): () => void {

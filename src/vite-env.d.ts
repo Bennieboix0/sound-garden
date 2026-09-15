@@ -11,6 +11,9 @@ interface ImportMetaEnv {
   readonly NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?: string;
 }
 
+/** Injected by vite.config.ts: package version plus short commit. */
+declare const __APP_VERSION__: string;
+
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }

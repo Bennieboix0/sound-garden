@@ -99,6 +99,18 @@ export interface Settings {
   /** Highest server updatedAt already pulled. 0 means "everything". */
   syncCursor?: number;
   lastSyncedAt?: number;
+
+  // --- Install and storage -------------------------------------------------
+  /** How many times a score has been opened. Gates the install banner. */
+  scoresOpened?: number;
+  /** Once dismissed, the install banner never returns. Settings still offers it. */
+  installBannerDismissed?: boolean;
+  /** Whether persistent storage has been requested yet, and what came back. */
+  storagePersistAsked?: boolean;
+  storagePersisted?: boolean;
+  /** When the library was last exported, for the backup reminder. */
+  lastBackupAt?: number;
+  backupReminderDismissedAt?: number;
 }
 
 export type LibraryLayout = 'grid' | 'list';

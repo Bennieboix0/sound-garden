@@ -74,7 +74,12 @@ export class SyncClient {
     });
 
     const user = await transport.currentUser().catch(() => null);
-    this.update({ user, state: user ? 'idle' : 'signed-out' });
+    // Never downgrade to signed-out on the strength of a failed lookup: the
+    // auth listener above may already have restored a session, and clobbering
+    // it here is what made a reload look like a sign-out.
+    if (user || !this.status.user) {
+      this.update({ user, state: user ? 'idle' : 'signed-out' });
+    }
     await this.refreshPendingCount();
 
     window.addEventListener('online', this.onOnline);

@@ -30,8 +30,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', settings.darkMode);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    meta?.setAttribute('content', settings.darkMode ? '#0b0d0c' : '#f4f6f4');
+    // Both media-query variants are overwritten: the app's dark mode is a user
+    // setting independent of the OS preference, so whichever one the browser
+    // matches has to carry the app's actual colour. ink-900 / ink-100.
+    const colour = settings.darkMode ? '#0b0d0c' : '#eef1ef';
+    for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+      meta.setAttribute('content', colour);
+    }
   }, [settings.darkMode]);
 
   const value = useMemo(
