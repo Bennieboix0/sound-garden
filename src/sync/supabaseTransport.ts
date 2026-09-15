@@ -179,10 +179,25 @@ export class SupabaseTransport implements SyncTransport {
     });
     if (error) throw error;
     if (!data.user) throw new Error('Check your email to confirm the account, then sign in.');
+
+    // With email confirmation switched on — the default — sign-up returns a
+    // user but no session. Treating that as success made the app show someone
+    // as signed in while every request they made was rejected as anonymous.
+    if (!data.session) {
+      throw new Error(
+        'Account created. Check your email for a confirmation link, then sign in.',
+      );
+    }
+
     const user = this.toAuthUser(data.user);
-    await this.client
+    const { error: profileError } = await this.client
       .from('profiles')
       .upsert({ id: user.id, display_name: displayName, updated_at: new Date().toISOString() });
+    if (profileError) {
+      // Not fatal: the display name also lives on the auth user, and each
+      // ensemble carries its own. Worth knowing about, though.
+      console.warn('[sound-garden] could not write profile', profileError.message);
+    }
     return user;
   }
 
@@ -413,6 +428,24 @@ export class SupabaseTransport implements SyncTransport {
       ...strokeIn(row),
       ensembleId,
     }));
+  }
+
+  async withdrawEnsembleStrokes(
+    ensembleId: string,
+    contentHash: string,
+    keepIds: string[],
+  ): Promise<void> {
+    let query = this.client
+      .from('strokes')
+      .delete()
+      .eq('ensemble_id', ensembleId)
+      .eq('content_hash', contentHash);
+    if (keepIds.length > 0) {
+      // PostgREST `not.in` wants a parenthesised list.
+      query = query.not('id', 'in', `(${keepIds.join(',')})`);
+    }
+    const { error } = await query;
+    if (error) throw error;
   }
 
   async listAssignments(): Promise<Assignment[]> {

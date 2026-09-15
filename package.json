@@ -16,7 +16,8 @@
     "test:ensembles": "node supabase/tests/ensembles.test.mjs",
     "test:follow": "esbuild src/sync/followGate.ts --bundle --format=esm --outfile=dist-test/followGate.mjs --log-level=warning && node supabase/tests/follow.test.mjs",
     "test:live": "node supabase/tests/live.test.mjs",
-    "test:join": "node supabase/tests/join.live.test.mjs"
+    "test:join": "node supabase/tests/join.live.test.mjs",
+    "test:annotations": "node supabase/tests/ensemble-annotations.live.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

@@ -129,6 +129,15 @@ export interface SyncTransport {
 
   publishEnsembleStrokes(ensembleId: string, strokes: WireStroke[]): Promise<void>;
   pullEnsembleStrokes(ensembleId: string, since: number): Promise<WireStroke[]>;
+  /**
+   * Removes anything previously published for this score that is not in
+   * `keepIds`, so a publish is a replacement rather than an addition.
+   */
+  withdrawEnsembleStrokes(
+    ensembleId: string,
+    contentHash: string,
+    keepIds: string[],
+  ): Promise<void>;
 
   listAssignments(): Promise<Assignment[]>;
   upsertAssignment(assignment: Assignment): Promise<void>;

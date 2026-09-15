@@ -659,6 +659,24 @@ visible, independently toggleable, and removed exactly when its group is left.
 A database constraint enforces that a stroke is either personal *or* published
 to exactly one ensemble, never ambiguously both.
 
+### Publishing is a replacement, not an addition
+
+A director's publish sends *exactly* their current markings for that score, and
+sweeps away anything published earlier that is no longer among them. Two
+consequences, both of which were bugs before:
+
+- **Publishing twice is harmless.** Published copies take an id derived from the
+  ensemble and the source stroke rather than a fresh uuid, so a re-publish
+  overwrites the previous copy. Previously a director who corrected a bowing and
+  published again left *both* versions on every student's page.
+- **A marking can be withdrawn.** Delete it and publish again, and it disappears
+  for the group. Previously nothing could ever be taken back.
+
+The pull side matches: the server is authoritative for a published layer, so a
+refresh drops any local ensemble stroke the server no longer has. Without that
+sweep a withdrawn marking would sit on the student's page forever, because a
+deleted row simply stops appearing in the results.
+
 ### How a published layer looks
 
 A director's markings are drawn beneath a pale keyline, so they read instantly
