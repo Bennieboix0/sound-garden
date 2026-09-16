@@ -25,14 +25,6 @@ function pdfString(text: string): string {
   return `(${cleaned.replace(/[^\x20-\x7e]/g, '?')})`;
 }
 
-function pdfDate(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `D:${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}` +
-    `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
-  );
-}
-
 /**
  * Writes a PDF with one image per page.
  *
@@ -40,6 +32,12 @@ function pdfDate(at: Date): string {
  * produce is about as simple as PDFs get — a catalog, a page tree, and one
  * image XObject per page — and a scanning feature is not worth several hundred
  * kilobytes in a bundle that has to be precached for offline use.
+ *
+ * Deliberately carries no creation date. A scanned score is identified
+ * downstream by the SHA-256 of these bytes, and a timestamp would make the
+ * output different every single time — so scanning the same page twice produced
+ * two unrelated documents, and even the person who scanned it could not carry
+ * their own markings between them. The output is a pure function of the pages.
  */
 export function imagesToPdf(
   pages: PdfImagePage[],
@@ -94,7 +92,7 @@ export function imagesToPdf(
     `<< /Producer (Sound Garden) /Creator (Sound Garden scanner)` +
       (meta.title ? ` /Title ${pdfString(meta.title)}` : '') +
       (meta.author ? ` /Author ${pdfString(meta.author)}` : '') +
-      ` /CreationDate ${pdfString(pdfDate(new Date()))} >>\nendobj\n`,
+      ` >>\nendobj\n`,
   );
 
   pages.forEach((page, index) => {

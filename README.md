@@ -677,6 +677,41 @@ refresh drops any local ensemble stroke the server no longer has. Without that
 sweep a withdrawn marking would sit on the student's page forever, because a
 deleted row simply stops appearing in the results.
 
+### Sharing works on identical files, and only on identical files
+
+Markings are matched by SHA-256 of the PDF bytes. That is what makes them
+device-independent, and it is also a hard limit worth stating plainly:
+
+**Two scans of the same page will never match.** Different bytes, different
+hash, no sharing at all. This is not a tuning problem that a fuzzier comparison
+could solve — measured on a real rendered page, one staff space is **0.59% of
+the page height**, so even if two scans were forced to match, ordinary
+hand-placed crop differences put the markings out by:
+
+| difference between the two scans | marking lands out by |
+| --- | --- |
+| corners 0.5% apart | 0.8 staff spaces |
+| corners 1% apart | 1.6 staff spaces |
+| corners 2% apart | 3.2 staff spaces |
+
+More than about half a staff space and a marking points at the wrong note, so a
+"close enough" match would be worse than no match — it would look right and be
+wrong.
+
+**What this means in practice:** for a group to share markings, everyone must
+import *the same file*. The director distributes the PDF however they already
+do — a shared drive, email, a link — and everyone imports those bytes. Scanning
+is for your own library, not for distributing a part to a section.
+
+Scanned output is at least deterministic: the generated PDF carries no
+timestamp, so the same capture always produces the same file. Before that it
+embedded the creation time, which meant scanning one page twice produced two
+unrelated documents and even the scanner's own markings would not carry across.
+
+Anchoring markings to musical features — bar numbers, rehearsal marks — rather
+than page coordinates is the only thing that would survive different editions.
+The broadcast payload is already versioned with that in mind.
+
 ### How a published layer looks
 
 A director's markings are drawn beneath a pale keyline, so they read instantly
