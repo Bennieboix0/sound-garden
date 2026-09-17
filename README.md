@@ -791,6 +791,33 @@ from someone else is not something you should have to go looking for. It stays
 one line in a corner and disappears entirely when no session is running. The
 wake lock behaves identically in follow mode and normal play.
 
+## Importing images
+
+PDFs and images both import, by picker or by dropping them anywhere on the
+library. PNG, JPEG, WebP, GIF, BMP and AVIF are read; HEIC is not, because only
+Safari can decode it, and it says so by name rather than failing vaguely.
+
+**Images are converted to a PDF at the door** rather than given a rendering path
+of their own. Crop, fit modes, annotation coordinates and the content hash that
+ensemble sharing depends on are all defined in terms of PDF pages, so a second
+kind of document would have to reimplement every one of them. Converting once
+keeps a single pipeline.
+
+Two things the conversion decides for you:
+
+- **Line art is stored as 1-bit, photographs as JPEG.** A PNG exported from
+  notation software is black ink on white paper, where 1-bit is both smaller and
+  *sharper* than JPEG — which puts ringing artefacts around staff lines. A
+  300dpi page of engraved music lands at about 4 KB. Anything coloured or
+  photographic takes the JPEG path instead.
+- **Transparency is composited onto white**, since a PNG with an alpha channel
+  would otherwise come out black.
+
+Several images at once are ambiguous — pages of one piece, or separate scores?
+Filenames usually answer it: `gigue-1.png … gigue-3.png` is obviously one piece
+and imports silently as a three-page score, ordered numerically so page 2 comes
+before page 10. When the names give no such hint, it asks.
+
 ## Deploying
 
 Vercel, Netlify, GitHub Pages or any static host — the app is a static bundle

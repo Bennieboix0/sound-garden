@@ -83,6 +83,8 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel = 'Delete',
+  cancelLabel = 'Cancel',
+  confirmVariant = 'danger',
   onConfirm,
   onCancel,
 }: {
@@ -90,6 +92,10 @@ export function ConfirmDialog({
   title: string;
   body: string;
   confirmLabel?: string;
+  /** For choices where "cancel" is really the other option, not a retreat. */
+  cancelLabel?: string;
+  /** Confirm is destructive by default; some choices are simply a fork. */
+  confirmVariant?: 'danger' | 'primary';
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -101,9 +107,9 @@ export function ConfirmDialog({
       footer={
         <>
           <Button size="lg" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </Button>
-          <Button size="lg" variant="danger" onClick={onConfirm}>
+          <Button size="lg" variant={confirmVariant} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </>

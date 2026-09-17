@@ -3,7 +3,10 @@ import { deleteScore } from '../../db/db';
 import { closeScoreDocument } from '../../pdf/pdfjs';
 import {
   filesFromDataTransfer,
-  importPdfFiles,
+  importFiles,
+  partitionFiles,
+  suggestGrouping,
+  type ImageGrouping,
   type ImportProgress,
 } from '../../db/importScores';
 import { useSettings } from '../../state/SettingsProvider';
@@ -55,6 +58,12 @@ export default function LibraryView() {
   const [pendingDelete, setPendingDelete] = useState<Score | null>(null);
   const [addingToSetlist, setAddingToSetlist] = useState<Score | null>(null);
   const [scanning, setScanning] = useState(false);
+  /** Set when a batch of images needs a decision about how to group them. */
+  const [pendingImages, setPendingImages] = useState<{
+    files: File[];
+    images: File[];
+    suggestion: ImageGrouping;
+  } | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -81,12 +90,12 @@ export default function LibraryView() {
     }
   };
 
-  const runImport = useCallback(async (files: File[]) => {
+  const runImport = useCallback(async (files: File[], grouping?: ImageGrouping) => {
     if (files.length === 0) return;
     setNotice(null);
     setProgress({ done: 0, total: files.length, currentName: files[0]?.name ?? '' });
     try {
-      const result = await importPdfFiles(files, setProgress);
+      const result = await importFiles(files, { grouping }, setProgress);
       const parts: string[] = [];
       if (result.imported.length > 0) {
         parts.push(
@@ -94,11 +103,13 @@ export default function LibraryView() {
         );
       }
       if (result.failures.length > 0) {
+        // Say *why*, not just what. "Skipped IMG_4021.heic" leaves someone
+        // guessing; naming the reason tells them what to do about it.
+        const shown = result.failures.slice(0, 3).map((f) => `${f.name} — ${f.reason}`);
         parts.push(
-          `Skipped ${result.failures.length}: ${result.failures
-            .slice(0, 3)
-            .map((f) => f.name)
-            .join(', ')}${result.failures.length > 3 ? '…' : ''}`,
+          `Skipped ${result.failures.length}: ${shown.join('; ')}${
+            result.failures.length > 3 ? '…' : ''
+          }`,
         );
       }
       setNotice(parts.join(' ') || 'Nothing to import.');
@@ -109,15 +120,33 @@ export default function LibraryView() {
     }
   }, []);
 
+  /**
+   * Several images at once are ambiguous: pages of one piece, or separate
+   * scores? Filenames usually answer it — "prelude-1.png … prelude-4.png" is
+   * clearly one piece — so ask only when they do not.
+   */
+  const startImport = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      const { images } = partitionFiles(files);
+      if (images.length > 1 && suggestGrouping(images) === 'separate') {
+        setPendingImages({ files, images, suggestion: 'separate' });
+        return;
+      }
+      await runImport(files);
+    },
+    [runImport],
+  );
+
   const onDrop = useCallback(
     async (event: React.DragEvent) => {
       event.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
       const files = await filesFromDataTransfer(event.dataTransfer);
-      await runImport(files);
+      await startImport(files);
     },
-    [runImport],
+    [startImport],
   );
 
   const confirmDelete = async () => {
@@ -155,20 +184,20 @@ export default function LibraryView() {
         <input
           ref={fileInput}
           type="file"
-          accept="application/pdf,.pdf"
+          accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif,.png,.jpg,.jpeg,.webp,.gif,.bmp,.avif"
           multiple
           className="hidden"
           onChange={async (event) => {
             const files = Array.from(event.target.files ?? []);
             event.target.value = '';
-            await runImport(files);
+            await startImport(files);
           }}
         />
         <Button size="lg" onClick={() => setScanning(true)}>
           Scan pages
         </Button>
         <Button variant="primary" size="lg" onClick={() => fileInput.current?.click()}>
-          Import PDFs
+          Import files
         </Button>
       </div>
 
@@ -261,7 +290,7 @@ export default function LibraryView() {
           title={scores.length === 0 ? 'Your library is empty' : 'Nothing matches'}
           body={
             scores.length === 0
-              ? 'Drop PDFs anywhere on this page, use Import PDFs, or photograph paper copies with Scan pages.'
+              ? 'Drop PDFs or images anywhere on this page, use Import files, or photograph paper copies with Scan pages.'
               : 'Try a different search, or clear the tag filter.'
           }
           action={
@@ -322,6 +351,25 @@ export default function LibraryView() {
       ) : null}
 
       {scanning ? <ScannerView onClose={() => setScanning(false)} /> : null}
+
+      <ConfirmDialog
+        open={pendingImages !== null}
+        title={`Import ${pendingImages?.images.length ?? 0} images`}
+        body="Are these pages of one piece, or separate scores? Pages are ordered by filename."
+        confirmLabel="Pages of one piece"
+        cancelLabel="Separate scores"
+        confirmVariant="primary"
+        onCancel={() => {
+          const batch = pendingImages;
+          setPendingImages(null);
+          if (batch) void runImport(batch.files, 'separate');
+        }}
+        onConfirm={() => {
+          const batch = pendingImages;
+          setPendingImages(null);
+          if (batch) void runImport(batch.files, 'one-score');
+        }}
+      />
 
       <MetadataDialog score={editing} onClose={() => setEditing(null)} />
       <AddToSetlistDialog score={addingToSetlist} onClose={() => setAddingToSetlist(null)} />

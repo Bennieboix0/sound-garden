@@ -1,6 +1,15 @@
 import { db, newId } from './db';
 import { provisionalHash, sha256 } from './contentHash';
 import { ensurePersistenceAfterFirstImport } from '../pwa/storage';
+import {
+  imageFilesToPdf,
+  isHeic,
+  isImageByName,
+  isSupportedImage,
+  looksLikeOnePiece,
+  naturalSort,
+  titleFromImageNames,
+} from './importImages';
 import { detectCrop, renderThumbnail } from '../pdf/analyze';
 import { loadDocumentFromData } from '../pdf/pdfjs';
 import type { CropInsets, Score } from '../types';
@@ -140,19 +149,67 @@ export async function importPdf(
   }
 }
 
-/** Imports a batch, reporting progress and collecting per-file failures. */
-export async function importPdfFiles(
+export function isPdf(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+
+/** How a batch of images should become scores. */
+export type ImageGrouping =
+  /** Every image is a page of one score, ordered by filename. */
+  | 'one-score'
+  /** Each image becomes a score of its own. */
+  | 'separate';
+
+/** Splits a dropped batch into the things this app can and cannot read. */
+export function partitionFiles(files: File[]): {
+  pdfs: File[];
+  images: File[];
+  unsupported: { name: string; reason: string }[];
+} {
+  const pdfs: File[] = [];
+  const images: File[] = [];
+  const unsupported: { name: string; reason: string }[] = [];
+
+  for (const file of files) {
+    if (isPdf(file)) pdfs.push(file);
+    else if (isSupportedImage(file)) images.push(file);
+    else if (isHeic(file)) {
+      unsupported.push({
+        name: file.name,
+        reason: 'HEIC needs Safari — convert it to JPEG or PNG first',
+      });
+    } else if (isImageByName(file)) {
+      unsupported.push({ name: file.name, reason: 'This image format cannot be read' });
+    } else {
+      unsupported.push({ name: file.name, reason: 'Not a PDF or an image' });
+    }
+  }
+  return { pdfs, images, unsupported };
+}
+
+/** Whether a batch should default to being treated as pages of one score. */
+export function suggestGrouping(images: File[]): ImageGrouping {
+  return looksLikeOnePiece(images) ? 'one-score' : 'separate';
+}
+
+/** Imports a batch of PDFs and images, collecting per-file failures. */
+export async function importFiles(
   files: File[],
+  options: { grouping?: ImageGrouping } = {},
   onProgress?: (p: ImportProgress) => void,
 ): Promise<ImportResult> {
-  const pdfs = files.filter(
-    (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
-  );
+  const { pdfs, images, unsupported } = partitionFiles(files);
   const imported: Score[] = [];
-  const failures: { name: string; reason: string }[] = [];
+  const failures: { name: string; reason: string }[] = [...unsupported];
 
-  for (const [index, file] of pdfs.entries()) {
-    onProgress?.({ done: index, total: pdfs.length, currentName: file.name });
+  const grouping = options.grouping ?? suggestGrouping(images);
+  // Each PDF is one unit of work; images are one unit each too, plus the
+  // conversion, which is the slow part.
+  const total = pdfs.length + images.length;
+  let done = 0;
+
+  for (const file of pdfs) {
+    onProgress?.({ done, total, currentName: file.name });
     try {
       imported.push(await importPdf(file, file.name));
     } catch (err) {
@@ -161,15 +218,45 @@ export async function importPdfFiles(
         reason: err instanceof Error ? err.message : 'Could not read this file',
       });
     }
+    done++;
   }
 
-  for (const skipped of files.filter((f) => !pdfs.includes(f))) {
-    failures.push({ name: skipped.name, reason: 'Not a PDF' });
+  if (images.length > 0) {
+    // Pages of one piece arrive in whatever order the picker handed them over,
+    // so sort numerically: page2 must come before page10.
+    const batches =
+      grouping === 'one-score' ? [naturalSort(images)] : naturalSort(images).map((f) => [f]);
+
+    for (const batch of batches) {
+      const title = titleFromImageNames(batch);
+      onProgress?.({ done, total, currentName: batch[0].name });
+      try {
+        const pdf = await imageFilesToPdf(batch, { title }, (p) => {
+          onProgress?.({ done: done + p.done, total, currentName: p.currentName });
+        });
+        imported.push(
+          await importPdf(pdf, `${title}.pdf`, {
+            title,
+            // Corners were never placed by hand here, so let the usual margin
+            // detection run as it would for any imported PDF.
+          }),
+        );
+      } catch (err) {
+        failures.push({
+          name: batch.length === 1 ? batch[0].name : `${batch.length} images`,
+          reason: err instanceof Error ? err.message : 'Could not convert these images',
+        });
+      }
+      done += batch.length;
+    }
   }
 
-  onProgress?.({ done: pdfs.length, total: pdfs.length, currentName: '' });
+  onProgress?.({ done: total, total, currentName: '' });
   return { imported, failures };
 }
+
+/** @deprecated Use importFiles, which also accepts images. */
+export const importPdfFiles = importFiles;
 
 /** Collects dropped files, walking directories when the browser exposes them. */
 export async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
